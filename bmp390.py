@@ -1,26 +1,29 @@
 # micropython
 # mail: goctaprog@gmail.com
 # MIT license
-# import ustruct
+import ustruct
+import micropython
 import array
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
 
 
-def _check_oss(oss_val: int):
-    if not 0 <= oss_val <= 5:
-        raise ValueError(f"Invalid oversample settings: {oss_val}")
+# @micropython.native
+def _check_value(value: int, valid_range, error_msg: str) -> int:
+    if value not in valid_range:
+        raise ValueError(error_msg)
+    return value
 
 
 def _calibration_regs_addr() -> iter:
     """возвращает кортеж из адреса регистра, размера значения в байтах, типа значения (u-unsigned, s-signed)"""
     start_addr = 0x31
+    tpl = ('1b', '2h', '2H')
     """возвращает итератор с адресами внутренних регистров датчика, хранящих калибровочные коэффициенты """
-    # val_type = ("2u", "2u", "1s", "2s", "2s", "1s", "1s", "2u", "2u", "1s", "1s", "2s", "1s", "1s")
-    val_type = "2u2u1s2s2s1s1s2u2u1s1s2s1s1s"
-    for i in range(0, len(val_type) >> 1):
-        v_size, v_type = val_type[2*i:2*(1+i)]
+    val_type = "22011002200100"
+    for item in val_type:
+        v_size, v_type = tpl[int(item)]
         yield start_addr, v_size, v_type
         start_addr += int(v_size)
 
@@ -28,10 +31,11 @@ def _calibration_regs_addr() -> iter:
 class Bmp390:
     """Class for work with Bosh BMP180 pressure sensor"""
 
-    def __init__(self, i2c, address=0xEE >> 1, baseline_pressure=101325.0, oversample_temperature=0b11, iir=0):
+    def __init__(self, i2c, address=0xEE >> 1, baseline_pressure=101325.0, oversample_temperature=0b11, iir_filter=0):
         """i2c - объект класса I2C; baseline_pressure - давление на уровне моря в Pa в твоей(!) местности;;
         oversample_settings (0..5) - точность измерения 0-грубо но быстро, 5-медленно, но точно;
         address - адрес датчика (0xEF (read) and 0xEE (write) from datasheet)
+        iir_filter=0..7; 0 - off, 7 - max value
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
@@ -43,13 +47,15 @@ class Bmp390:
         self.tmp1 = None
         self.tmp0 = None
         self.B5 = None   # for precalculate
-        _check_oss(oversample_temperature)
-        self.oss = oversample_temperature  # for temperature only!
+        # for temperature only!
+        self.oss = _check_value(oversample_temperature, range(0, 6),
+                                f"Invalid oversample value: {oversample_temperature}")
         self.adr = address
         self.i2c = i2c
-        self.IIR = iir  #
+        self.IIR = _check_value(iir_filter, range(0, 8),
+                                f"Invalid iir_filter value: {iir_filter}")
         self.base_pressure = baseline_pressure
-        # массив, хранящий калибровочные коэффициенты (11 штук)
+        # массив, хранящий калибровочные коэффициенты (xx штук)
         self.cfa = array.array("l")  # signed long elements
         # считываю калибровочные коэффициенты
         self._read_calibration_data()
@@ -57,10 +63,9 @@ class Bmp390:
         self.precalculate()
 
     def get_calibration_data(self, index: int) -> int:
-        """возвращает калибровочный коэффициент по его индексу (0..10).
+        """возвращает калибровочный коэффициент по его индексу (0..13).
         returns the calibration coefficient by its index (0..10)"""
-        if not 0 <= index < 11:
-            raise ValueError(f"Invalid index value: {index}")
+        self._check_value(index, range(0, 14), f"Invalid index value: {index}")
         return self.cfa[index]
 
     def precalculate(self):
@@ -92,20 +97,50 @@ class Bmp390:
         return count read values"""
         if len(self.cfa):
             raise ValueError(f"calibration data array already filled!")
-        for index, addr in enumerate(_calibration_regs_addr()):
-            reg_val = self._read_register(addr, 2)
-            rv = ustruct.unpack(">H" if 2 < index < 6 else ">h", reg_val)[0]
+        for v_addr, v_size, v_type in _calibration_regs_addr():
+            reg_val = self._read_register(v_addr, v_size)
+            rv = ustruct.unpack(f">{v_type}", reg_val)[0]
             # check
             if rv == 0x00 or rv == 0xFFFF:
-                raise ValueError(f"Invalid register addr: {addr} value: {hex(rv)}")
+                raise ValueError(f"Invalid register addr: {v_addr} value: {hex(rv)}")
             self.cfa.append(rv)
         return len(self.cfa)
 
-    def get_chip_id(self) -> int:
-        """Возвращает идентификатор датчика. Правильное значение - 0х55.
-        Returns the ID of the sensor. The correct value is 0x55."""
-        res = self._read_register(0xD0, 1)
-        return int(res[0])
+    def get_chip_id(self) -> tuple:
+        """Возвращает идентификатор датчика и его revision ID.
+        Returns the ID and revision ID of the sensor."""
+        chip_id = self._read_register(0x00, 1)
+        rev_id = self._read_register(0x01, 1)
+        return int(chip_id[0]), int(rev_id[0])
+
+    def get_error(self) -> int:
+        """Возвращает три бита состояния ошибок.
+        Bit 0 - fatal_err Fatal error
+        Bit 1 - Command execution failed. Cleared on read.
+        Bit 2 conf_err sensor configuration error detected (only working in normal mode). Cleared on read.
+        """
+        err = self._read_register(0x02, 1)
+        return int(err[0]) & 0x07
+
+    def get_status(self) -> int:
+        """Возвращает три бита состояния датчика
+        бит 0 - CMD decoder status (0: Command in progress; 1: Command decoder is ready to accept a new command)
+        бит 1 - Data ready for pressure. (It gets reset, when one pressure DATA register is read out)
+        бит 2 - Data ready for temperature sensor. (It gets reset, when one temperature DATA register is read out)
+        """
+        val = self._read_register(0x03, 1)
+        return (int(val[0]) >> 4) & 0x07
+
+    def get_uncompensated_pressure(self) -> int:
+        # трех байтовое значение
+        val = self._read_register(0x04, 3)
+        return ustruct.unpack(">H", val)[0]
+
+    def get_uncompensated_temperature(self) -> int:
+        # трех байтовое значение
+        val = self._read_register(0x07, 3)
+        return ustruct.unpack(">h", val)[0]
+
 
     def soft_reset(self):
         """программный сброс датчика.
