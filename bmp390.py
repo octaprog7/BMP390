@@ -5,11 +5,12 @@ import ustruct
 import micropython
 import array
 
+
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
 
 
-# @micropython.native
+@micropython.native
 def _check_value(value: int, valid_range, error_msg: str) -> int:
     if value not in valid_range:
         raise ValueError(error_msg)
@@ -24,7 +25,7 @@ def _calibration_regs_addr() -> iter:
     val_type = "22011002200100"
     for item in val_type:
         v_size, v_type = tpl[int(item)]
-        yield start_addr, v_size, v_type
+        yield int(start_addr), int(v_size), v_type
         start_addr += int(v_size)
 
 
@@ -39,14 +40,7 @@ class Bmp390:
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
-        self.press4 = None  # for precalculate
-        self.press3 = None
-        self.press2 = None
-        self.press1 = None
-        self.press0 = None
-        self.tmp1 = None
-        self.tmp0 = None
-        self.B5 = None   # for precalculate
+        self.t_lin = None   # for pressure calculation
         # for temperature only!
         self.oss = _check_value(oversample_temperature, range(0, 6),
                                 f"Invalid oversample value: {oversample_temperature}")
@@ -60,25 +54,32 @@ class Bmp390:
         # считываю калибровочные коэффициенты
         self._read_calibration_data()
         # предварительный расчет
-        self.precalculate()
+        self._precalculate()
 
     def get_calibration_data(self, index: int) -> int:
         """возвращает калибровочный коэффициент по его индексу (0..13).
-        returns the calibration coefficient by its index (0..10)"""
-        self._check_value(index, range(0, 14), f"Invalid index value: {index}")
+        returns the calibration coefficient by its index (0..13)"""
+        _check_value(index, range(0, 14), f"Invalid index value: {index}")
         return self.cfa[index]
 
-    def precalculate(self):
+    def _precalculate(self):
         """предварительно вычисленные значения"""
         # для расчета температуры
-        self.tmp0 = self.get_calibration_data(4) / 2 ** 15  #
-        self.tmp1 = self.get_calibration_data(9) * 2 ** 11  #
+        self.par_t1 = self.get_calibration_data(0) * 2 ** 8  #
+        self.par_t2 = self.get_calibration_data(1) / 2 ** 30  #
+        self.par_t3 = self.get_calibration_data(2) / 2 ** 48  #
         # для расчета давления
-        self.press0 = self.get_calibration_data(7) / 2 ** 23
-        self.press1 = self.get_calibration_data(1) / 2 ** 11
-        self.press2 = self.get_calibration_data(2) / 2 ** 13
-        self.press3 = self.get_calibration_data(6) / 2 ** 28
-        self.press4 = abs(self.get_calibration_data(3)) / 2 ** 15
+        self.par_p1 = (self.get_calibration_data(3) - 2 ** 14) / 2 ** 20
+        self.par_p2 = (self.get_calibration_data(4) - 2 ** 14) / 2 ** 29
+        self.par_p3 = self.get_calibration_data(5) / 2 ** 32
+        self.par_p4 = self.get_calibration_data(6) / 2 ** 37
+        self.par_p5 = 8 * self.get_calibration_data(7)
+        self.par_p6 = self.get_calibration_data(8) / 2 ** 6
+        self.par_p7 = self.get_calibration_data(9) / 2 ** 8
+        self.par_p8 = self.get_calibration_data(10) / 2 ** 15
+        self.par_p9 = self.get_calibration_data(11) / 2 ** 48
+        self.par_p10 = self.get_calibration_data(12) / 2 ** 48
+        self.par_p11 = self.get_calibration_data(13) / 2 ** 65
 
     def _read_register(self, reg_addr, bytes_count=2) -> bytes:
         """считывает из регистра датчика значение.
@@ -131,84 +132,116 @@ class Bmp390:
         val = self._read_register(0x03, 1)
         return (int(val[0]) >> 4) & 0x07
 
-    def get_uncompensated_pressure(self) -> int:
+    def get_pressure_raw(self) -> int:
         # трех байтовое значение
-        val = self._read_register(0x04, 3)
-        return ustruct.unpack(">H", val)[0]
+        l, m, h = self._read_register(0x04, 3)
+        return (h << 16) | (m << 8) | l
+        
+    def get_pressure(self) -> float:
+        uncompensated = self.get_pressure_raw()
+        #
+        partial_data1 = self.par_p6 * self.t_lin
+        partial_data2 = self.par_p7 * (self.t_lin * self.t_lin)
+        partial_data3 = self.par_p8 * (self.t_lin * self.t_lin * self.t_lin)
+        partial_out1 = self.par_p5 + partial_data1 + partial_data2 + partial_data3
+        #
+        partial_data1 = self.par_p2 * self.t_lin
+        partial_data2 = self.par_p3 * (self.t_lin * self.t_lin)
+        partial_data3 = self.par_p4 * (self.t_lin * self.t_lin * self.t_lin)
+        partial_out2 = uncompensated * (self.par_p1 + partial_data1 + partial_data2 + partial_data3)
+        #
+        partial_data1 = uncompensated * uncompensated
+        partial_data2 = self.par_p9 + self.par_p10 * self.t_lin
+        partial_data3 = partial_data1 * partial_data2
+        partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * self.par_p11
+        #
+        return partial_out1 + partial_out2 + partial_data4
 
-    def get_uncompensated_temperature(self) -> int:
+    def get_temperature_raw(self) -> int:
         # трех байтовое значение
-        val = self._read_register(0x07, 3)
-        return ustruct.unpack(">h", val)[0]
-
-
-    def soft_reset(self):
-        """программный сброс датчика.
-        software reset of the sensor"""
-        self._write_register(0xE0, 0xB6, 1)
-
-    def start_measurement(self, temperature_or_pressure: bool = True):
-        """Start measurement process in sensor.
-        Если temperature_or_pressure==Истина тогда будет выполнен запуск измерения температуры иначе давления!
-        Вы должны подождать результата 5 мс после запуска измерения температуры.
-        Время ожидания результата после запуска измерения давления зависит от переменной self.осс.
-        self.оss     задержка, мс
-        0               5
-        1               8
-        2               14
-        3               26
-
-        Внимание! Глупо ждать результата методом time.delay_ms(value)!
-        Вместо этого можно занять процессор полезным делом!"""
-        loc_oss = self.oss
-        start_conversion = 0b00100000   # bit 5 - запуск преобразования (1)
-        bit_4_0 = 0x14  # давление
-        if temperature_or_pressure:
-            bit_4_0 = 0x0E  # температура
-            loc_oss = 0  # обнуляю OSS при температуре
-        val = loc_oss << 6 | start_conversion | bit_4_0
-        self._write_register(0xF4, val, 1)
+        l, m, h = self._read_register(0x07, 3)
+        return (h << 16) | (m << 8) | l
 
     def get_temperature(self) -> float:
-        """возвращает значение температуры, измеренное датчиком в Цельсиях.
-        returns the temperature value measured by the sensor in Celsius"""
-        raw = self._read_register(0xF6, 2)  # считывание сырого значения
-        temp = ustruct.unpack(">H", raw)[0]  # unsigned short
-        a = self.tmp0 * (temp - self.get_calibration_data(5))
-        b = self.tmp1 / (a + self.get_calibration_data(10))
-        self.B5 = a + b  #
-        return 6.25E-3 * (a + b + 8)
+        uncompensated = self.get_temperature_raw()
+        partial_data1 = uncompensated - self.par_t1
+        partial_data2 = partial_data1 * self.par_t2
+        # Update the compensated temperature in calib structure since this is needed for pressure calculation
+        self.t_lin = partial_data2 + (partial_data1 * partial_data1) * self.par_t3
+        return self.t_lin
 
-    def get_pressure(self) -> float:
-        """возвращает значение давления, измеренное датчиком в Паскалях (Pa).
-        До вызова этого метода нужно вызвать хотя-бы один раз метод get_temperature.
-        Лучше вызывайте метод парами:
-        get_temperature
-        get_pressure
+    def get_sensor_time(self):
+        # трех байтовое значение
+        l, m, h = self._read_register(0x0C, 3)
+        return (h << 16) | (m << 8) | l
 
-        returns the pressure value measured by the sensor in Pascals (Pa).
-        Before calling this method, you need to call the get_temperature method at least once.
-        Better call the method in pairs:
-        get_temperature
-        get_pressure"""
-        raw = self._read_register(0xF6, 3)  # считывание сырого значения (три байта)
-        msb, lsb, xlsb = raw
-        uncompensated = ((msb << 16)+(lsb << 8)) >> (8-self.oss)
-        b6 = self.B5-4000
-        x1 = self.press0 * b6 ** 2  #
-        x2 = self.press1 * b6
-        x3 = x1 + x2
-        b3 = (2 + ((x3 + 4 * self.get_calibration_data(0)) * 2**self.oss)) / 4
+    def get_event(self) -> int:
+        """Bit 0 por_detected ‘1’ after device power up or softreset. Clear-on-read
+        Bit 1 itf_act_pt ‘1’ when a serial interface transaction occurs during a
+        pressure or temperature conversion. Clear-on-read"""
+        evt = self._read_register(0x10, 1)
+        return int(evt[0]) & 0b11
 
-        x1 = b6 * self.press2
-        x2 = self.press3 * b6 ** 2
-        x3 = (2+x1+x2) / 4
+    def get_int_status(self) -> int:
+        """Bit 0 fwm_int FIFO Watermark Interrupt
+        Bit 1 ffull_int FIFO Full Interrupt
+        Bit 3 drdy data ready interrupt"""
+        int_stat = self._read_register(0x11, 1)
+        return int(int_stat[0]) & 0b111
 
-        b4 = self.press4 * (x3+32768)
-        b7 = (abs(uncompensated)-b3) * (50000 / 2**self.oss)
+    def get_fifo_length(self) -> int:
+        """The FIFO byte counter indicates the current fill level of the FIFO buffer."""
+        fl = self._read_register(0x12, 2)
+        return ustruct.unpack(">H", fl)[0]
 
-        curr_pressure = 2 * b7 / b4
-        x1 = 7.073394953E-7 * curr_pressure ** 2
-        x2 = -0.1122589111328125 * curr_pressure
+    def soft_reset(self, reset_or_flush: bool = True):
+        """программный сброс датчика.
+        software reset of the sensor"""
+        if reset_or_flush:
+            self._write_register(0x7E, 0xB6, 1)  # reset
+        else:
+            self._write_register(0x7E, 0xB0, 1)  # flush
 
-        return curr_pressure + 6.25E-2 * (x1 + x2 + 3791)
+    def start_measurement(self, enable_press, enable_temp, mode=None):
+        tmp = self._read_register(0x1B, 1)[0]
+        if enable_press:
+            tmp |= 0b01
+        else:
+            tmp &= ~0b01
+
+        if enable_temp:
+            tmp |= 0b10
+        else:
+            tmp &= ~0b10
+
+        if mode:
+            if "sleep" == mode:
+                tmp &= ~0b0011_0000
+            if "forced" == mode:
+                tmp &= ~0b0011_0000
+                tmp |= 0b0001_0000
+            if "normal" == mode:
+                tmp &= ~0b0011_0000
+                tmp |= 0b0011_0000
+
+        self._write_register(0x1B, tmp, 1)
+
+    def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
+        tmp = 0
+        po = _check_value(pressure_oversampling, range(0, 6),
+                          f"Invalid value pressure_oversampling: {pressure_oversampling}")
+        to = _check_value(temperature_oversampling, range(0, 6),
+                          f"Invalid value temperature_oversampling: {temperature_oversampling}")
+        tmp |= po
+        tmp |= to << 3
+        self._write_register(0x1C, tmp, 1)
+
+    def set_sampling_period(self, period: int):
+        p = _check_value(period, range(0, 18),
+                         f"Invalid value pressure_oversampling: {period}")
+        self._write_register(0x1D, p, 1)
+
+    def set_iir_filter(self, value):
+        p = _check_value(value, range(0, 8),
+                         f"Invalid value iir_filter: {value}")
+        self._write_register(0x1F, p, 1)
