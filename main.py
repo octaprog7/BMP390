@@ -17,16 +17,14 @@ if __name__ == '__main__':
     # ps - pressure sensor
     ps = bmp390.Bmp390(i2c)
 
-    for val in bmp390._calibration_regs_addr():
-        print(val)
     # если у вас посыпались исключения, чего у меня на макетной плате с али и проводами МГТВ не наблюдается,
     # то проверьте все соединения.
     # Радиотехника - наука о контактах! РТФ-Чемпион!
     res = ps.get_chip_id()
     print(f"chip_id: {res}")
     
-    calibr_data = [ps.get_calibration_data(index) for index in range(0, 14)]
-    print(f"Calibration data: {calibr_data}")
+    calibration_data = [ps.get_calibration_data(index) for index in range(0, 14)]
+    print(f"Calibration data: {calibration_data}")
 
     print(f"Event: {ps.get_event()}; Int status: {ps.get_int_status()}; FIFO length: {ps.get_fifo_length()}")
     #
@@ -41,4 +39,4 @@ if __name__ == '__main__':
         tme = ps.get_sensor_time()
         time.sleep_ms(100)
         #
-        print(f"Temperature: {t}; pressure: {p}; time: {hex(tme)}; ")
+        print(f"Temperature: {t} \xB0C; pressure: {p} Pa; time: {hex(tme)}; ")
