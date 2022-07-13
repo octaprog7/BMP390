@@ -100,7 +100,7 @@ class Bmp390:
             raise ValueError(f"calibration data array already filled!")
         for v_addr, v_size, v_type in _calibration_regs_addr():
             reg_val = self._read_register(v_addr, v_size)
-            rv = ustruct.unpack(f">{v_type}", reg_val)[0]
+            rv = ustruct.unpack(f"<{v_type}", reg_val)[0]
             # check
             if rv == 0x00 or rv == 0xFFFF:
                 raise ValueError(f"Invalid register addr: {v_addr} value: {hex(rv)}")
