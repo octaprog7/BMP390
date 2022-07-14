@@ -37,6 +37,6 @@ if __name__ == '__main__':
         t = ps.get_temperature()
         p = ps.get_pressure()
         tme = ps.get_sensor_time()
-        time.sleep_ms(100)
+        time.sleep_ms(1000)
         #
         print(f"Temperature: {t} \xB0C; pressure: {p} Pa; time: {hex(tme)}; ")
