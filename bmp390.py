@@ -16,7 +16,7 @@ def _check_value(value: int, valid_range, error_msg: str) -> int:
         raise ValueError(error_msg)
     return value
 
-
+@micropython.native
 def _calibration_regs_addr() -> iter:
     """возвращает кортеж из адреса регистра, размера значения в байтах, типа значения (u-unsigned, s-signed)"""
     start_addr = 0x31
@@ -62,6 +62,7 @@ class Bmp390:
         _check_value(index, range(0, 14), f"Invalid index value: {index}")
         return self.cfa[index]
 
+    @micropython.native
     def _precalculate(self):
         """предварительно вычисленные значения"""
         # для расчета температуры
@@ -132,44 +133,54 @@ class Bmp390:
         val = self._read_register(0x03, 1)
         return (int(val[0]) >> 4) & 0x07
 
+    @micropython.native
     def get_pressure_raw(self) -> int:
         # трех байтовое значение
         l, m, h = self._read_register(0x04, 3)
         return (h << 16) | (m << 8) | l
         
     def get_pressure(self) -> float:
+        """Return pressure in Pascal [Pa].
+        Call get_temperature() before call get_pressure() !!!"""
         uncompensated = self.get_pressure_raw()
         #
-        partial_data1 = self.par_p6 * self.t_lin
-        partial_data2 = self.par_p7 * (self.t_lin * self.t_lin)
-        partial_data3 = self.par_p8 * (self.t_lin * self.t_lin * self.t_lin)
+        t_lin = self.t_lin
+        t_lin2 = t_lin * t_lin
+        t_lin3 = t_lin * t_lin * t_lin
+        #
+        partial_data1 = self.par_p6 * t_lin
+        partial_data2 = self.par_p7 * t_lin2
+        partial_data3 = self.par_p8 * t_lin3
         partial_out1 = self.par_p5 + partial_data1 + partial_data2 + partial_data3
         #
-        partial_data1 = self.par_p2 * self.t_lin
-        partial_data2 = self.par_p3 * (self.t_lin * self.t_lin)
-        partial_data3 = self.par_p4 * (self.t_lin * self.t_lin * self.t_lin)
+        partial_data1 = self.par_p2 * t_lin
+        partial_data2 = self.par_p3 * t_lin2
+        partial_data3 = self.par_p4 * t_lin3
         partial_out2 = uncompensated * (self.par_p1 + partial_data1 + partial_data2 + partial_data3)
         #
         partial_data1 = uncompensated * uncompensated
-        partial_data2 = self.par_p9 + self.par_p10 * self.t_lin
+        partial_data2 = self.par_p9 + self.par_p10 * t_lin
         partial_data3 = partial_data1 * partial_data2
         partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * self.par_p11
         #
         return partial_out1 + partial_out2 + partial_data4
 
+    @micropython.native
     def get_temperature_raw(self) -> int:
         # трех байтовое значение
         l, m, h = self._read_register(0x07, 3)
         return (h << 16) | (m << 8) | l
 
     def get_temperature(self) -> float:
+        """Return temperature in Celsius"""
         uncompensated = self.get_temperature_raw()
         partial_data1 = uncompensated - self.par_t1
         partial_data2 = partial_data1 * self.par_t2
-        # Update the compensated temperature in calib structure since this is needed for pressure calculation
+        # Update the compensated temperature since this is needed for pressure calculation !!!
         self.t_lin = partial_data2 + (partial_data1 * partial_data1) * self.par_t3
         return self.t_lin
-
+    
+    @micropython.native
     def get_sensor_time(self):
         # трех байтовое значение
         l, m, h = self._read_register(0x0C, 3)
