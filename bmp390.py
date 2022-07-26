@@ -5,6 +5,8 @@ import ustruct
 import micropython
 import array
 
+from sensor_pack import bus_service
+from sensor_pack.base_sensor import BaseSensor, Iterator
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
@@ -15,6 +17,7 @@ def _check_value(value: int, valid_range, error_msg: str) -> int:
     if value not in valid_range:
         raise ValueError(error_msg)
     return value
+
 
 @micropython.native
 def _calibration_regs_addr() -> iter:
@@ -29,10 +32,11 @@ def _calibration_regs_addr() -> iter:
         start_addr += int(v_size)
 
 
-class Bmp390:
+class Bmp390(BaseSensor, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
-    def __init__(self, i2c, address=0xEE >> 1, baseline_pressure=101325.0, oversample_temperature=0b11, iir_filter=0):
+    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1,
+                 baseline_pressure=101325.0, oversample_temperature=0b11, iir_filter=0):
         """i2c - объект класса I2C; baseline_pressure - давление на уровне моря в Pa в твоей(!) местности;;
         oversample_settings (0..5) - точность измерения 0-грубо но быстро, 5-медленно, но точно;
         address - адрес датчика (0xEF (read) and 0xEE (write) from datasheet)
@@ -40,15 +44,18 @@ class Bmp390:
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
+        super().__init__(adapter, address)
         self.t_lin = None   # for pressure calculation
         # for temperature only!
         self.oss = _check_value(oversample_temperature, range(0, 6),
                                 f"Invalid oversample value: {oversample_temperature}")
         self.adr = address
-        self.i2c = i2c
+        self.adapter = adapter
         self.IIR = _check_value(iir_filter, range(0, 8),
                                 f"Invalid iir_filter value: {iir_filter}")
         self.base_pressure = baseline_pressure
+        self.mode = 0
+        self.enable_pressure = False
         # массив, хранящий калибровочные коэффициенты (xx штук)
         self.cfa = array.array("l")  # signed long elements
         # считываю калибровочные коэффициенты
@@ -82,16 +89,18 @@ class Bmp390:
         self.par_p10 = self.get_calibration_data(12) / 2 ** 48
         self.par_p11 = self.get_calibration_data(13) / 2 ** 65
 
+    # BaseSensor
     def _read_register(self, reg_addr, bytes_count=2) -> bytes:
         """считывает из регистра датчика значение.
         bytes_count - размер значения в байтах"""
-        return self.i2c.readfrom_mem(self.adr, reg_addr, bytes_count)
+        return self.adapter.read_register(self.adr, reg_addr, bytes_count)
 
+    # BaseSensor
     def _write_register(self, reg_addr, value: int, bytes_count=2) -> int:
         """записывает данные value в датчик, по адресу reg_addr.
         bytes_count - кол-во записываемых данных"""
-        buf = value.to_bytes(bytes_count, "big")
-        return self.i2c.writeto_mem(self.adr, reg_addr, buf)
+        # buf = value.to_bytes(bytes_count, "big")
+        return self.adapter.write_register(self.adr, reg_addr, value, bytes_count, "big")
 
     def _read_calibration_data(self) -> int:
         """Читает калибровочные значение из датчика.
@@ -108,7 +117,7 @@ class Bmp390:
             self.cfa.append(rv)
         return len(self.cfa)
 
-    def get_chip_id(self) -> tuple:
+    def get_id(self) -> tuple:
         """Возвращает идентификатор датчика и его revision ID.
         Returns the ID and revision ID of the sensor."""
         chip_id = self._read_register(0x00, 1)
@@ -213,27 +222,33 @@ class Bmp390:
         else:
             self._write_register(0x7E, 0xB0, 1)  # flush
 
-    def start_measurement(self, enable_press, enable_temp, mode=None):
+    def start_measurement(self, enable_press, enable_temp, mode: int = 2):
+        """ # mode: 0 - sleep, 1-forced, 2-normal (continuously)"""
+        if mode not in range(3):
+            raise ValueError(f"Invalid mode value: {mode}")
         tmp = self._read_register(0x1B, 1)[0]
         if enable_press:
             tmp |= 0b01
         else:
             tmp &= ~0b01
 
+        self.enable_pressure = enable_press
+
         if enable_temp:
             tmp |= 0b10
         else:
             tmp &= ~0b10
 
-        if mode:
-            if "sleep" == mode:
-                tmp &= ~0b0011_0000
-            if "forced" == mode:
-                tmp &= ~0b0011_0000
+        if True:
+            tmp &= ~0b0011_0000
+            if 0 == mode:
+                pass
+            if 1 == mode:
                 tmp |= 0b0001_0000
-            if "normal" == mode:
-                tmp &= ~0b0011_0000
+            if 2 == mode:
                 tmp |= 0b0011_0000
+            # save
+            self.mode = mode
 
         self._write_register(0x1B, tmp, 1)
 
@@ -256,3 +271,9 @@ class Bmp390:
         p = _check_value(value, range(0, 8),
                          f"Invalid value iir_filter: {value}")
         self._write_register(0x1F, p, 1)
+
+    # Iterator
+    def __next__(self):
+        if self.enable_pressure and 2 == self.mode:
+            return self.get_temperature()
+        return None
