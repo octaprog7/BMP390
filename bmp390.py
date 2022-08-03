@@ -35,8 +35,7 @@ def _calibration_regs_addr() -> iter:
 class Bmp390(BaseSensor, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
-    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1,
-                 baseline_pressure=101325.0, oversample_temperature=0b11, iir_filter=0):
+    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1, oversample_temperature=0b11, iir_filter=0):
         """i2c - объект класса I2C; baseline_pressure - давление на уровне моря в Pa в твоей(!) местности;;
         oversample_settings (0..5) - точность измерения 0-грубо но быстро, 5-медленно, но точно;
         address - адрес датчика (0xEF (read) and 0xEE (write) from datasheet)
@@ -53,7 +52,6 @@ class Bmp390(BaseSensor, Iterator):
         self.adapter = adapter
         self.IIR = _check_value(iir_filter, range(0, 8),
                                 f"Invalid iir_filter value: {iir_filter}")
-        self.base_pressure = baseline_pressure
         self.mode = 0
         self.enable_pressure = False
         # массив, хранящий калибровочные коэффициенты (xx штук)
@@ -109,6 +107,7 @@ class Bmp390(BaseSensor, Iterator):
         if len(self.cfa):
             raise ValueError(f"calibration data array already filled!")
         for v_addr, v_size, v_type in _calibration_regs_addr():
+            # print(v_addr, v_size, v_type)
             reg_val = self._read_register(v_addr, v_size)
             rv = ustruct.unpack(f"<{v_type}", reg_val)[0]
             # check
@@ -204,7 +203,7 @@ class Bmp390(BaseSensor, Iterator):
 
     def get_int_status(self) -> int:
         """Bit 0 fwm_int FIFO Watermark Interrupt
-        Bit 1 ffull_int FIFO Full Interrupt
+        Bit 1 full_int FIFO Full Interrupt
         Bit 3 drdy data ready interrupt"""
         int_stat = self._read_register(0x11, 1)
         return int(int_stat[0]) & 0b111
@@ -264,7 +263,7 @@ class Bmp390(BaseSensor, Iterator):
 
     def set_sampling_period(self, period: int):
         p = _check_value(period, range(0, 18),
-                         f"Invalid value pressure_oversampling: {period}")
+                         f"Invalid value output data rates: {period}")
         self._write_register(0x1D, p, 1)
 
     def set_iir_filter(self, value):
