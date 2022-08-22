@@ -39,11 +39,13 @@ if __name__ == '__main__':
     ps.set_iir_filter(2)
     #
     ps.start_measurement(True, True, 2)
-    for i in range(10):
-        time.sleep_ms(100)
-        t = ps.get_temperature()
-        time.sleep_ms(1000)
-        p = ps.get_pressure()
-        tme = ps.get_sensor_time()
+    for i in ps:
+        time.sleep_ms(300)
+        s = ps.get_status()
+        if s[2] and s[1]:
+            t, p, tme = ps.get_temperature(), ps.get_pressure(), ps.get_sensor_time()
+        else:
+            print(f"Data ready: temp {s[2]}, press {s[1]}")
+            continue
         #
         print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); time: {hex(tme)}; ")
