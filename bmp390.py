@@ -1,7 +1,6 @@
 # micropython
 # mail: goctaprog@gmail.com
 # MIT license
-import ustruct
 import micropython
 import array
 
@@ -32,10 +31,21 @@ def _calibration_regs_addr() -> iter:
         start_addr += int(v_size)
 
 
+@micropython.native
+def get_conversion_cycle_time(temperature_or_pressure: bool, oversample: int) -> int:
+    """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек"""
+    delays_ms = 5, 8, 14, 26
+    if temperature_or_pressure:
+        return delays_ms[0]    # temperature
+    # pressure
+    return delays_ms[oversample]
+
+
 class Bmp390(BaseSensor, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
-    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1, oversample_temperature=0b11, iir_filter=0):
+    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1,
+                 oversample_temp=0b11, oversample_press=0b11, iir_filter=0):
         """i2c - объект класса I2C; baseline_pressure - давление на уровне моря в Pa в твоей(!) местности;;
         oversample_settings (0..5) - точность измерения 0-грубо но быстро, 5-медленно, но точно;
         address - адрес датчика (0xEF (read) and 0xEE (write) from datasheet)
@@ -43,17 +53,21 @@ class Bmp390(BaseSensor, Iterator):
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
-        super().__init__(adapter, address)
+        super().__init__(adapter, address, False)
         self.t_lin = None   # for pressure calculation
         # for temperature only!
-        self.oss = _check_value(oversample_temperature, range(0, 6),
-                                f"Invalid oversample value: {oversample_temperature}")
+        self.oss_t = _check_value(oversample_temp, range(0, 6),
+                                f"Invalid temperature oversample value: {oversample_temp}")
+        self.oss_p = _check_value(oversample_press, range(0, 6),
+                                  f"Invalid pressure oversample value: {oversample_press}")
         self.adr = address
         self.adapter = adapter
         self.IIR = _check_value(iir_filter, range(0, 8),
                                 f"Invalid iir_filter value: {iir_filter}")
         self.mode = 0
         self.enable_pressure = False
+        self.enable_temperature = False
+        self.sampling_period = 0x02     # 1.28 sec
         # массив, хранящий калибровочные коэффициенты (xx штук)
         self.cfa = array.array("l")  # signed long elements
         # считываю калибровочные коэффициенты
@@ -97,8 +111,8 @@ class Bmp390(BaseSensor, Iterator):
     def _write_register(self, reg_addr, value: int, bytes_count=2) -> int:
         """записывает данные value в датчик, по адресу reg_addr.
         bytes_count - кол-во записываемых данных"""
-        # buf = value.to_bytes(bytes_count, "big")
-        return self.adapter.write_register(self.adr, reg_addr, value, bytes_count, "big")
+        byte_order = self._get_byteorder_as_str()[0]
+        return self.adapter.write_register(self.adr, reg_addr, value, bytes_count, byte_order)
 
     def _read_calibration_data(self) -> int:
         """Читает калибровочные значение из датчика.
@@ -109,7 +123,7 @@ class Bmp390(BaseSensor, Iterator):
         for v_addr, v_size, v_type in _calibration_regs_addr():
             # print(v_addr, v_size, v_type)
             reg_val = self._read_register(v_addr, v_size)
-            rv = ustruct.unpack(f"<{v_type}", reg_val)[0]
+            rv = self.unpack(f"{v_type}", reg_val)[0]
             # check
             if rv == 0x00 or rv == 0xFFFF:
                 raise ValueError(f"Invalid register addr: {v_addr} value: {hex(rv)}")
@@ -132,14 +146,17 @@ class Bmp390(BaseSensor, Iterator):
         err = self._read_register(0x02, 1)
         return int(err[0]) & 0x07
 
-    def get_status(self) -> int:
-        """Возвращает три бита состояния датчика
+    def get_status(self) -> tuple:
+        """Возвращает три бита состояния датчика как кортеж
+        Data ready for temperature, Data ready for pressure, CMD decoder status
         бит 0 - CMD decoder status (0: Command in progress; 1: Command decoder is ready to accept a new command)
         бит 1 - Data ready for pressure. (It gets reset, when one pressure DATA register is read out)
         бит 2 - Data ready for temperature sensor. (It gets reset, when one temperature DATA register is read out)
         """
-        val = self._read_register(0x03, 1)
-        return (int(val[0]) >> 4) & 0x07
+        val = self._read_register(0x03, 1)[0]
+        i = (int(val) >> 4) & 0x07
+        drdy_temp, drdy_press, cmd_rdy = i & 0x04, i & 0x02, i & 0x01
+        return drdy_temp, drdy_press, cmd_rdy
 
     @micropython.native
     def get_pressure_raw(self) -> int:
@@ -211,7 +228,7 @@ class Bmp390(BaseSensor, Iterator):
     def get_fifo_length(self) -> int:
         """The FIFO byte counter indicates the current fill level of the FIFO buffer."""
         fl = self._read_register(0x12, 2)
-        return ustruct.unpack(">H", fl)[0]
+        return self.unpack("H", fl)[0]
 
     def soft_reset(self, reset_or_flush: bool = True):
         """программный сброс датчика.
@@ -231,8 +248,6 @@ class Bmp390(BaseSensor, Iterator):
         else:
             tmp &= ~0b01
 
-        self.enable_pressure = enable_press
-
         if enable_temp:
             tmp |= 0b10
         else:
@@ -247,9 +262,11 @@ class Bmp390(BaseSensor, Iterator):
             if 2 == mode:
                 tmp |= 0b0011_0000
             # save
-            self.mode = mode
 
         self._write_register(0x1B, tmp, 1)
+        self.mode = mode
+        self.enable_pressure = enable_press
+        self.enable_temperature = enable_temp
 
     def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
         tmp = 0
@@ -260,11 +277,14 @@ class Bmp390(BaseSensor, Iterator):
         tmp |= po
         tmp |= to << 3
         self._write_register(0x1C, tmp, 1)
+        self.oss_t = temperature_oversampling
+        self.oss_p = pressure_oversampling
 
     def set_sampling_period(self, period: int):
         p = _check_value(period, range(0, 18),
                          f"Invalid value output data rates: {period}")
         self._write_register(0x1D, p, 1)
+        self.sampling_period = period
 
     def set_iir_filter(self, value):
         p = _check_value(value, range(0, 8),
@@ -272,7 +292,10 @@ class Bmp390(BaseSensor, Iterator):
         self._write_register(0x1F, p, 1)
 
     # Iterator
-    def __next__(self):
-        if self.enable_pressure and 2 == self.mode:
-            return self.get_temperature()
-        return None
+    def __next__(self) -> tuple:
+        res = list()
+        if self.enable_temperature:
+            res.append(self.get_temperature())
+        if self.enable_pressure:
+            res.append(self.get_pressure())
+        return tuple(res)
