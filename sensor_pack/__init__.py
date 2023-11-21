@@ -1,2 +1,2 @@
-NAME = "base sensor micropython package"
-VERSION = "1.0"
+NAME = "base sensor MicroPython package"
+VERSION = "1.1"

@@ -7,6 +7,7 @@ import array
 from sensor_pack import bus_service
 from sensor_pack.base_sensor import BaseSensor, Iterator
 
+
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
 
@@ -36,7 +37,7 @@ def get_conversion_cycle_time(temperature_or_pressure: bool, oversample: int) ->
     """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек"""
     delays_ms = 5, 8, 14, 26
     if temperature_or_pressure:
-        return delays_ms[0]    # temperature
+        return delays_ms[0]  # temperature
     # pressure
     return delays_ms[oversample]
 
@@ -54,31 +55,37 @@ class Bmp390(BaseSensor, Iterator):
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
         super().__init__(adapter, address, False)
-        self.t_lin = None   # for pressure calculation
+        self._buf_3 = bytearray((0 for _ in range(3)))  # для _read_buf_from_mem
+        self.t_lin = None  # for pressure calculation
         # for temperature only!
-        self.oss_t = _check_value(oversample_temp, range(0, 6),
-                                f"Invalid temperature oversample value: {oversample_temp}")
-        self.oss_p = _check_value(oversample_press, range(0, 6),
+        self.oss_t = _check_value(oversample_temp, range(6),
+                                  f"Invalid temperature oversample value: {oversample_temp}")
+        self.oss_p = _check_value(oversample_press, range(6),
                                   f"Invalid pressure oversample value: {oversample_press}")
         self.adr = address
         self.adapter = adapter
-        self.IIR = _check_value(iir_filter, range(0, 8),
+        self.IIR = _check_value(iir_filter, range(8),
                                 f"Invalid iir_filter value: {iir_filter}")
         self.mode = 0
         self.enable_pressure = False
         self.enable_temperature = False
-        self.sampling_period = 0x02     # 1.28 sec
-        # массив, хранящий калибровочные коэффициенты (xx штук)
-        self.cfa = array.array("l")  # signed long elements
+        self.sampling_period = 0x02  # 1.28 sec
+        # массив, хранящий калибровочные коэффициенты (14 штук)
+        self.cfa = array.array("l", [0 for _ in range(14)])  # signed long elements
         # считываю калибровочные коэффициенты
         self._read_calibration_data()
         # предварительный расчет
         self._precalculate()
 
+    def _read_buf_from_mem(self, address: int, buf):
+        """Читает из устройства, начиная с адреса address в буфер.
+        Кол-во читаемых байт равно "длине" буфера в байтах!"""
+        return self.adapter.read_buf_from_mem(self.address, address, buf)
+
     def get_calibration_data(self, index: int) -> int:
         """возвращает калибровочный коэффициент по его индексу (0..13).
         returns the calibration coefficient by its index (0..13)"""
-        _check_value(index, range(0, 14), f"Invalid index value: {index}")
+        _check_value(index, range(14), f"Invalid index value: {index}")
         return self.cfa[index]
 
     @micropython.native
@@ -118,8 +125,9 @@ class Bmp390(BaseSensor, Iterator):
         """Читает калибровочные значение из датчика.
         read calibration values from sensor.
         return count read values"""
-        if len(self.cfa):
+        if any(self.cfa):
             raise ValueError(f"calibration data array already filled!")
+        index = 0
         for v_addr, v_size, v_type in _calibration_regs_addr():
             # print(v_addr, v_size, v_type)
             reg_val = self._read_register(v_addr, v_size)
@@ -127,7 +135,8 @@ class Bmp390(BaseSensor, Iterator):
             # check
             if rv == 0x00 or rv == 0xFFFF:
                 raise ValueError(f"Invalid register addr: {v_addr} value: {hex(rv)}")
-            self.cfa.append(rv)
+            self.cfa[index] = rv
+            index += 1
         return len(self.cfa)
 
     def get_id(self) -> tuple:
@@ -163,7 +172,7 @@ class Bmp390(BaseSensor, Iterator):
         # трех байтовое значение
         l, m, h = self._read_register(0x04, 3)
         return (h << 16) | (m << 8) | l
-        
+
     def get_pressure(self) -> float:
         """Return pressure in Pascal [Pa].
         Call get_temperature() before call get_pressure() !!!"""
@@ -204,7 +213,7 @@ class Bmp390(BaseSensor, Iterator):
         # Update the compensated temperature since this is needed for pressure calculation !!!
         self.t_lin = partial_data2 + (partial_data1 * partial_data1) * self.par_t3
         return self.t_lin
-    
+
     @micropython.native
     def get_sensor_time(self):
         # трех байтовое значение
@@ -270,9 +279,9 @@ class Bmp390(BaseSensor, Iterator):
 
     def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
         tmp = 0
-        po = _check_value(pressure_oversampling, range(0, 6),
+        po = _check_value(pressure_oversampling, range(6),
                           f"Invalid value pressure_oversampling: {pressure_oversampling}")
-        to = _check_value(temperature_oversampling, range(0, 6),
+        to = _check_value(temperature_oversampling, range(6),
                           f"Invalid value temperature_oversampling: {temperature_oversampling}")
         tmp |= po
         tmp |= to << 3
@@ -281,13 +290,13 @@ class Bmp390(BaseSensor, Iterator):
         self.oss_p = pressure_oversampling
 
     def set_sampling_period(self, period: int):
-        p = _check_value(period, range(0, 18),
+        p = _check_value(period, range(18),
                          f"Invalid value output data rates: {period}")
         self._write_register(0x1D, p, 1)
         self.sampling_period = period
 
     def set_iir_filter(self, value):
-        p = _check_value(value, range(0, 8),
+        p = _check_value(value, range(8),
                          f"Invalid value iir_filter: {value}")
         self._write_register(0x1F, p, 1)
 
