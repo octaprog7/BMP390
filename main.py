@@ -40,22 +40,21 @@ if __name__ == '__main__':
     print(f"время преобразования в [мкс]: {ps.get_conversion_cycle_time()}")
     for _ in range(20):
         delay_func(300)
-        status = ps.get_status()
-        if status[2] and status[1]:
+        temperature_ready, pressure_ready, cmd_ready = ps.get_status()
+        if cmd_ready and pressure_ready:
             t, p = ps.get_temperature(), ps.get_pressure()
             print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
         else:
-            print(f"Data ready: temp {status[2]}, press {status[1]}")
+            print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
     #
     print("Режим непрерывных периодических измерений!")
     ps.start_measurement(enable_press=True, enable_temp=True, mode=2)
     for pressure, temperature in ps:
-        time.sleep_ms(300)
-        status = ps.get_status()
-        if status[2] and status[1]:
+        delay_func(300)
+        temperature_ready, pressure_ready, cmd_ready = ps.get_status()
+        if cmd_ready and pressure_ready:
             t, p, tme = temperature, pressure, ps.get_sensor_time()
+            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
         else:
-            print(f"Data ready: temp {status[2]}, press {status[1]}")
-            continue
+            print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
         #
-        print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
