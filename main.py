@@ -29,18 +29,33 @@ if __name__ == '__main__':
 
     print(f"Event: {ps.get_event()}; Int status: {ps.get_int_status()}; FIFO length: {ps.get_fifo_length()}")
     #
+    delay_func = time.sleep_ms
+    #
     ps.set_oversampling(2, 3)
     ps.set_sampling_period(5)
     ps.set_iir_filter(2)
-    #
-    ps.start_measurement(enable_press=True, enable_temp=True, mode=2)
-    for i in ps:
-        time.sleep_ms(300)
-        s = ps.get_status()
-        if s[2] and s[1]:
-            t, p, tme = ps.get_temperature(), ps.get_pressure(), ps.get_sensor_time()
+
+    print("Режим однократных измерений по запросу!")
+    ps.start_measurement(enable_press=True, enable_temp=True, mode=1)
+    print(f"время преобразования в [мкс]: {ps.get_conversion_cycle_time()}")
+    for _ in range(20):
+        delay_func(300)
+        status = ps.get_status()
+        if status[2] and status[1]:
+            t, p = ps.get_temperature(), ps.get_pressure()
+            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
         else:
-            print(f"Data ready: temp {s[2]}, press {s[1]}")
+            print(f"Data ready: temp {status[2]}, press {status[1]}")
+    #
+    print("Режим непрерывных периодических измерений!")
+    ps.start_measurement(enable_press=True, enable_temp=True, mode=2)
+    for pressure, temperature in ps:
+        time.sleep_ms(300)
+        status = ps.get_status()
+        if status[2] and status[1]:
+            t, p, tme = temperature, pressure, ps.get_sensor_time()
+        else:
+            print(f"Data ready: temp {status[2]}, press {status[1]}")
             continue
         #
         print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")

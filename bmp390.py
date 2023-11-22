@@ -32,16 +32,6 @@ def _calibration_regs_addr() -> iter:
         start_addr += int(v_size)
 
 
-@micropython.native
-def get_conversion_cycle_time(temperature_or_pressure: bool, oversample: int) -> int:
-    """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек"""
-    delays_ms = 5, 8, 14, 26
-    if temperature_or_pressure:
-        return delays_ms[0]  # temperature
-    # pressure
-    return delays_ms[oversample]
-
-
 class Bmp390(BaseSensor, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
@@ -171,8 +161,8 @@ class Bmp390(BaseSensor, Iterator):
         бит 2 - Data ready for temperature sensor. (It gets reset, when one temperature DATA register is read out)
         """
         val = self._read_register(0x03, 1)[0]
-        i = (int(val) >> 4) & 0x07
-        drdy_temp, drdy_press, cmd_rdy = i & 0x04, i & 0x02, i & 0x01
+        i = 0x07 & (val >> 4)
+        drdy_temp, drdy_press, cmd_rdy = 0x04 & i, 0x02 & i, 0x01 & i
         return drdy_temp, drdy_press, cmd_rdy
 
     @micropython.native
@@ -310,6 +300,17 @@ class Bmp390(BaseSensor, Iterator):
                          f"Invalid value iir_filter: {value}")
         self._write_register(0x1F, p, 1)
         self._IIR = value
+
+    @micropython.native
+    def get_conversion_cycle_time(self) -> int:
+        """возвращает время преобразования в [мкс] датчиком температуры или давления в зависимости от его настроек"""
+        k = 2020
+        temp_us = 163 + k * 2 ** self._oss_t
+        total = 234 + temp_us
+        if self._enable_pressure:
+            press_us = 392 + k * 2 ** self._oss_p
+            total += press_us
+        return total
 
     # Iterator
     def __next__(self) -> [tuple, float, None]:
