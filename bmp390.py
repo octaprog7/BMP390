@@ -50,9 +50,9 @@ class Bmp390(BaseSensor, Iterator):
         self._t_lin = None  # for pressure calculation
         # for temperature only!
         self._oss_t = _check_value(oversample_temp, range(6),
-                                  f"Invalid temperature oversample value: {oversample_temp}")
+                                   f"Invalid temperature oversample value: {oversample_temp}")
         self._oss_p = _check_value(oversample_press, range(6),
-                                  f"Invalid pressure oversample value: {oversample_press}")
+                                   f"Invalid pressure oversample value: {oversample_press}")
         self._adapter = adapter
         self._IIR = _check_value(iir_filter, range(8),
                                  f"Invalid iir_filter value: {iir_filter}")
