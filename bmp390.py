@@ -251,7 +251,7 @@ class Bmp390(BaseSensor, Iterator):
         """ # mode: 0 - sleep, 1-forced, 2-normal (continuously)"""
         if mode not in range(3):
             raise ValueError(f"Invalid mode value: {mode}")
-        tmp = self._read_register(0x1B, 1)[0]
+        tmp = 0     # self._read_register(0x1B, 1)[0]
         if enable_press:
             tmp |= 0b01
         else:
@@ -275,6 +275,15 @@ class Bmp390(BaseSensor, Iterator):
         self._mode = mode
         self._enable_pressure = enable_press
         self._enable_temperature = enable_temp
+
+    def get_power_mode(self) -> int:
+        """Возвращает текущий режим работы датчика:
+        0 - сон
+        1 или 2 - однократное измерение
+        3 - периодические измерения"""
+        tmp = self._read_register(0x1B, 1)[0]
+        return (0b11_0000 & tmp) >> 4
+
 
     def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
         tmp = 0
