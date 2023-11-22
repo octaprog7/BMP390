@@ -23,7 +23,12 @@ if __name__ == '__main__':
     # Радиотехника - наука о контактах! РТФ-Чемпион!
     res = ps.get_id()
     print(f"chip_id: {res}")
-    
+    # если я не вызывал этот метод, то датчик не входил в режим
+    # однократных измерений и был все время в режиме периодических измерений!!!
+    # я не знаю, что это за глюк! Поэтому перед вызовом start_measurement(..) вызывайте soft_reset()!!
+    ps.soft_reset()
+    print(f"pwr mode: {ps.get_power_mode()}")
+
     calibration_data = [ps.get_calibration_data(index) for index in range(14)]
     print(f"Calibration data: {calibration_data}")
 
@@ -36,25 +41,29 @@ if __name__ == '__main__':
     ps.set_iir_filter(2)
 
     print("Режим однократных измерений по запросу!")
-    ps.start_measurement(enable_press=True, enable_temp=True, mode=1)
+    print(f"pwr mode: {ps.get_power_mode()}")
     print(f"время преобразования в [мкс]: {ps.get_conversion_cycle_time()}")
     for _ in range(20):
+        ps.start_measurement(enable_press=True, enable_temp=True, mode=1)
         delay_func(300)
         temperature_ready, pressure_ready, cmd_ready = ps.get_status()
         if cmd_ready and pressure_ready:
             t, p = ps.get_temperature(), ps.get_pressure()
-            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
+            pm = ps.get_power_mode()
+            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); {pm} ")
         else:
             print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
     #
     print("Режим непрерывных периодических измерений!")
     ps.start_measurement(enable_press=True, enable_temp=True, mode=2)
+    print(f"pwr mode: {ps.get_power_mode()}")
     for pressure, temperature in ps:
         delay_func(300)
         temperature_ready, pressure_ready, cmd_ready = ps.get_status()
         if cmd_ready and pressure_ready:
             t, p, tme = temperature, pressure, ps.get_sensor_time()
-            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); ")
+            pm = ps.get_power_mode()
+            print(f"Temperature: {t} \xB0C; pressure: {p} hPa ({pa_mmhg(p)} mm Hg); {pm}")
         else:
             print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
         #
