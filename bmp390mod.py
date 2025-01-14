@@ -4,35 +4,33 @@
 import micropython
 import array
 
-from sensor_pack import bus_service
-from sensor_pack.base_sensor import BaseSensor, Iterator
-
+from collections import namedtuple
+from sensor_pack_2 import bus_service
+from sensor_pack_2.base_sensor import IBaseSensorEx, Iterator, IDentifier, DeviceEx, check_value
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
-
-
-@micropython.native
-def _check_value(value: int, valid_range, error_msg: str) -> int:
-    if value not in valid_range:
-        raise ValueError(error_msg)
-    return value
-
 
 @micropython.native
 def _calibration_regs_addr() -> iter:
     """возвращает кортеж из адреса регистра, размера значения в байтах, типа значения (u-unsigned, s-signed)"""
     start_addr = 0x31
     tpl = ('1b', '2h', '2H')
-    """возвращает итератор с адресами внутренних регистров датчика, хранящих калибровочные коэффициенты """
+    #возвращает итератор с адресами внутренних регистров датчика, хранящих калибровочные коэффициенты
     val_type = "22011002200100"
     for item in val_type:
         v_size, v_type = tpl[int(item)]
         yield int(start_addr), int(v_size), v_type
         start_addr += int(v_size)
 
+serial_number_bmp390 = namedtuple("sn_bmp390", "chip_id rev_id")
+measured_values_bmp390 = namedtuple("meas_vals_bmp390", "T P")
+data_status_bmp390 = namedtuple("data_status_bmp390", "temp_ready press_ready cmd_decoder_ready")
+int_status_bmp390 = namedtuple("int_status_bmp390", "data_ready fifo_is_full fifo_watermark")
+event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
 
-class Bmp390(BaseSensor, Iterator):
+
+class Bmp390(IBaseSensorEx, IDentifier, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
     def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1,
@@ -44,17 +42,18 @@ class Bmp390(BaseSensor, Iterator):
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
-        super().__init__(adapter, address, False)
+        # super().__init__(adapter, address, False)
+        self._connection = DeviceEx(adapter=adapter, address=address, big_byte_order=False)
         self._buf_2 = bytearray((0 for _ in range(2)))  # для _read_buf_from_mem
         self._buf_3 = bytearray((0 for _ in range(3)))  # для _read_buf_from_mem
         self._t_lin = None  # for pressure calculation
         # for temperature only!
-        self._oss_t = _check_value(oversample_temp, range(6),
+        self._oss_t = check_value(oversample_temp, range(6),
                                    f"Invalid temperature oversample value: {oversample_temp}")
-        self._oss_p = _check_value(oversample_press, range(6),
+        self._oss_p = check_value(oversample_press, range(6),
                                    f"Invalid pressure oversample value: {oversample_press}")
         self._adapter = adapter
-        self._IIR = _check_value(iir_filter, range(8),
+        self._IIR = check_value(iir_filter, range(8),
                                  f"Invalid iir_filter value: {iir_filter}")
         self._mode = 0  # sleep mode
         self._enable_pressure = False
@@ -72,51 +71,32 @@ class Bmp390(BaseSensor, Iterator):
         del self._buf_3
         del self._buf_2
 
-    def _read_buf_from_mem(self, address: int, buf):
-        """Читает из устройства, начиная с адреса address в буфер.
-        Кол-во читаемых байт равно "длине" буфера в байтах!"""
-        self._adapter.read_buf_from_mem(self.address, address, buf)
-        return buf
-
-    def get_calibration_data(self, index: int) -> int:
+    def get_calibration_coefficient(self, index: int) -> int:
         """возвращает калибровочный коэффициент по его индексу (0..13).
         returns the calibration coefficient by its index (0..13)"""
-        _check_value(index, range(14), f"Invalid index value: {index}")
+        check_value(index, range(14), f"Invalid index value: {index}")
         return self._cfa[index]
 
     @micropython.native
     def _precalculate(self):
         """предварительно вычисленные значения"""
+        get_calibr_coeff = self.get_calibration_coefficient
         # для расчета температуры
-        self.par_t1 = self.get_calibration_data(0) * 2 ** 8  #
-        self.par_t2 = self.get_calibration_data(1) / 2 ** 30  #
-        self.par_t3 = self.get_calibration_data(2) / 2 ** 48  #
+        self.par_t1 = get_calibr_coeff(0) * 2 ** 8  #
+        self.par_t2 = get_calibr_coeff(1) / 2 ** 30  #
+        self.par_t3 = get_calibr_coeff(2) / 2 ** 48  #
         # для расчета давления
-        self.par_p1 = (self.get_calibration_data(3) - 2 ** 14) / 2 ** 20
-        self.par_p2 = (self.get_calibration_data(4) - 2 ** 14) / 2 ** 29
-        self.par_p3 = self.get_calibration_data(5) / 2 ** 32
-        self.par_p4 = self.get_calibration_data(6) / 2 ** 37
-        self.par_p5 = 8 * self.get_calibration_data(7)
-        self.par_p6 = self.get_calibration_data(8) / 2 ** 6
-        self.par_p7 = self.get_calibration_data(9) / 2 ** 8
-        self.par_p8 = self.get_calibration_data(10) / 2 ** 15
-        self.par_p9 = self.get_calibration_data(11) / 2 ** 48
-        self.par_p10 = self.get_calibration_data(12) / 2 ** 48
-        self.par_p11 = self.get_calibration_data(13) / 2 ** 65
-
-    # BaseSensor
-    def _read_register(self, reg_addr, bytes_count=2) -> bytes:
-        """считывает из регистра датчика значение.
-        bytes_count - размер значения в байтах"""
-        # print(f"DBG. _read_register. bytes_count: {bytes_count}")
-        return self._adapter.read_register(self.address, reg_addr, bytes_count)
-
-    # BaseSensor
-    def _write_register(self, reg_addr, value: int, bytes_count=2) -> int:
-        """записывает данные value в датчик, по адресу reg_addr.
-        bytes_count - кол-во записываемых данных"""
-        byte_order = self._get_byteorder_as_str()[0]
-        return self._adapter.write_register(self.address, reg_addr, value, bytes_count, byte_order)
+        self.par_p1 = (get_calibr_coeff(3) - 2 ** 14) / 2 ** 20
+        self.par_p2 = (get_calibr_coeff(4) - 2 ** 14) / 2 ** 29
+        self.par_p3 = get_calibr_coeff(5) / 2 ** 32
+        self.par_p4 = get_calibr_coeff(6) / 2 ** 37
+        self.par_p5 = 8 * get_calibr_coeff(7)
+        self.par_p6 = get_calibr_coeff(8) / 2 ** 6
+        self.par_p7 = get_calibr_coeff(9) / 2 ** 8
+        self.par_p8 = get_calibr_coeff(10) / 2 ** 15
+        self.par_p9 = get_calibr_coeff(11) / 2 ** 48
+        self.par_p10 = get_calibr_coeff(12) / 2 ** 48
+        self.par_p11 = get_calibr_coeff(13) / 2 ** 65
 
     def _read_calibration_data(self) -> int:
         """Читает калибровочные значение из датчика.
@@ -124,11 +104,12 @@ class Bmp390(BaseSensor, Iterator):
         return count read values"""
         if any(self._cfa):
             raise ValueError(f"calibration data array already filled!")
+        _conn = self._connection
         index = 0
         for v_addr, v_size, v_type in _calibration_regs_addr():
             # print(v_addr, v_size, v_type)
-            reg_val = self._read_register(v_addr, v_size)
-            rv = self.unpack(f"{v_type}", reg_val)[0]
+            reg_val = _conn.read_reg(reg_addr=v_addr, bytes_count=v_size)
+            rv = _conn.unpack(fmt_char=f"{v_type}", source=reg_val)[0]
             # check
             if rv == 0x00 or rv == 0xFFFF:
                 raise ValueError(f"Invalid register addr: {v_addr} value: {hex(rv)}")
@@ -136,13 +117,21 @@ class Bmp390(BaseSensor, Iterator):
             index += 1
         return len(self._cfa)
 
-    def get_id(self) -> tuple:
+    # IDentifier
+    def get_id(self) -> serial_number_bmp390:
         """Возвращает идентификатор датчика и его revision ID.
         Returns the ID and revision ID of the sensor."""
         buf = self._buf_2
-        self._read_buf_from_mem(0x00, buf)
+        # self._read_buf_from_mem(0x00, buf)
+        self._connection.read_buf_from_mem(address=0x00, buf=buf, address_size=1)
         # chip id, rev_id
-        return buf[0], buf[1]
+        return serial_number_bmp390(chip_id=buf[0], rev_id=buf[1])
+
+    def soft_reset(self, reset_or_flush: bool = True):
+        """программный сброс датчика.
+        software reset of the sensor"""
+        value = 0xB6 if reset_or_flush else 0xB0
+        self._connection.write_reg(reg_addr=0x7E, value=value, bytes_count=1)
 
     def get_error(self) -> int:
         """Возвращает три бита состояния ошибок.
@@ -150,32 +139,32 @@ class Bmp390(BaseSensor, Iterator):
         Bit 1 - Command execution failed. Cleared on read.
         Bit 2 conf_err sensor configuration error detected (only working in normal mode). Cleared on read.
         """
-        err = self._read_register(0x02, 1)[0]
+        err = self._connection.read_reg(reg_addr=0x02, bytes_count=1)[0]
         return err & 0x07
 
-    def get_status(self) -> tuple:
+    def get_data_status(self) -> data_status_bmp390:
         """Возвращает три бита состояния датчика как кортеж
         Data ready for temperature, Data ready for pressure, CMD decoder status
         бит 0 - CMD decoder status (0: Command in progress; 1: Command decoder is ready to accept a new command)
         бит 1 - Data ready for pressure. (It gets reset, when one pressure DATA register is read out)
         бит 2 - Data ready for temperature sensor. (It gets reset, when one temperature DATA register is read out)
         """
-        val = self._read_register(0x03, 1)[0]
+        val = self._connection.read_reg(0x03, 1)[0]
         i = 0x07 & (val >> 4)
         drdy_temp, drdy_press, cmd_rdy = 0x04 & i, 0x02 & i, 0x01 & i
-        return drdy_temp, drdy_press, cmd_rdy
+        return data_status_bmp390(temp_ready=drdy_temp, press_ready=drdy_press, cmd_decoder_ready=cmd_rdy)
 
     @micropython.native
-    def get_pressure_raw(self) -> int:
+    def _get_pressure_raw(self) -> int:
         # трех байтовое значение
         buf = self._buf_3
-        l, m, h = self._read_buf_from_mem(0x04, buf)
+        l, m, h = self._connection.read_buf_from_mem(address=0x04, buf=buf, address_size=1)
         return (h << 16) | (m << 8) | l
 
     def get_pressure(self) -> float:
         """Return pressure in Pascal [Pa].
         Call get_temperature() before call get_pressure() !!!"""
-        uncompensated = self.get_pressure_raw()
+        uncompensated = self._get_pressure_raw()
         #
         t_lin = self._t_lin
         t_lin2 = t_lin * t_lin
@@ -199,15 +188,15 @@ class Bmp390(BaseSensor, Iterator):
         return partial_out1 + partial_out2 + partial_data4
 
     @micropython.native
-    def get_temperature_raw(self) -> int:
+    def _get_temperature_raw(self) -> int:
         # трех байтовое значение
         buf = self._buf_3
-        l, m, h = self._read_buf_from_mem(0x07, buf)
+        l, m, h = self._connection.read_buf_from_mem(address=0x07, buf=buf, address_size=1)
         return (h << 16) | (m << 8) | l
 
     def get_temperature(self) -> float:
         """Return temperature in Celsius"""
-        uncompensated = self.get_temperature_raw()
+        uncompensated = self._get_temperature_raw()
         partial_data1 = uncompensated - self.par_t1
         partial_data2 = partial_data1 * self.par_t2
         # Update the compensated temperature since this is needed for pressure calculation !!!
@@ -215,43 +204,39 @@ class Bmp390(BaseSensor, Iterator):
         return self._t_lin
 
     @micropython.native
-    def get_sensor_time(self):
+    def get_sensor_time(self) -> int:
         # трех байтовое значение
         buf = self._buf_3
-        l, m, h = self._read_buf_from_mem(0x0C, buf)
+        l, m, h = self._connection.read_buf_from_mem(address=0x0C, buf=buf, address_size=1)
         return (h << 16) | (m << 8) | l
 
-    def get_event(self) -> int:
+    def get_event(self) -> event_bmp390:
         """Bit 0 por_detected ‘1’ after device power up or softreset. Clear-on-read
         Bit 1 itf_act_pt ‘1’ when a serial interface transaction occurs during a
         pressure or temperature conversion. Clear-on-read"""
-        evt = self._read_register(0x10, 1)
-        return int(evt[0]) & 0b11
+        _evt = 0b11 & self._connection.read_reg(reg_addr=0x10, bytes_count=1)[0]
+        return event_bmp390(itf_act_pt=bool(0b10 & _evt), por_detected=bool(0b01 & _evt))
 
-    def get_int_status(self) -> int:
+    def get_int_status(self) -> int_status_bmp390:
         """Bit 0 fwm_int FIFO Watermark Interrupt
         Bit 1 full_int FIFO Full Interrupt
         Bit 3 drdy data ready interrupt"""
-        int_stat = self._read_register(0x11, 1)
-        return int(int_stat[0]) & 0b111
+        int_stat = 0b1011 & self._connection.read_reg(reg_addr=0x11, bytes_count=1)[0]
+        return int_status_bmp390(data_ready=bool(0b1000 & int_stat),
+                                 fifo_is_full=bool(0b010 & int_stat),
+                                 fifo_watermark=bool(0b0001 & int_stat))
 
     def get_fifo_length(self) -> int:
         """The FIFO byte counter indicates the current fill level of the FIFO buffer."""
         buf = self._buf_2
-        self._read_buf_from_mem(0x12, buf)
-        return self.unpack("H", buf)[0]
+        self._connection.read_buf_from_mem(address=0x12, buf=buf, address_size=1)
+        return self._connection.unpack(fmt_char="H", source=buf)[0]
 
-    def soft_reset(self, reset_or_flush: bool = True):
-        """программный сброс датчика.
-        software reset of the sensor"""
-        value = 0xB6 if reset_or_flush else 0xB0
-        self._write_register(0x7E, value, 1)
-
-    def start_measurement(self, enable_press, enable_temp, mode: int = 2):
+    def start_measurement(self, enable_press: bool = True, enable_temp: bool = True, mode: int = 2):
         """ # mode: 0 - sleep, 1-forced, 2-normal (continuously)"""
-        if mode not in range(3):
+        if not mode in range(3):
             raise ValueError(f"Invalid mode value: {mode}")
-        tmp = 0     # self._read_register(0x1B, 1)[0]
+        tmp = 0
         if enable_press:
             tmp |= 0b01
         else:
@@ -271,7 +256,7 @@ class Bmp390(BaseSensor, Iterator):
         if 2 == mode:
             tmp |= 0b0011_0000  # continuous mode (режим непрерывных периодических измерений)
         # save
-        self._write_register(0x1B, tmp, 1)
+        self._connection.write_reg(reg_addr=0x1B, value=tmp, bytes_count=1)
         self._mode = mode
         self._enable_pressure = enable_press
         self._enable_temperature = enable_temp
@@ -281,33 +266,43 @@ class Bmp390(BaseSensor, Iterator):
         0 - сон
         1 или 2 - однократное измерение
         3 - периодические измерения"""
-        tmp = self._read_register(0x1B, 1)[0]
+        tmp = self._connection.read_reg(reg_addr=0x1B, bytes_count=1)[0]
         return (0b11_0000 & tmp) >> 4
 
+    def is_single_shot_mode(self) -> bool:
+        """Возвращает Истина, когда датчик находится в режиме однократных измерений,
+        каждое из которых запускается методом start_measurement"""
+        _pm = self.get_power_mode()
+        return 2 == _pm or 1 == _pm
+
+    def is_continuously_mode(self) -> bool:
+        """Возвращает Истина, когда датчик находится в режиме многократных измерений,
+        производимых автоматически. Процесс запускается методом start_measurement"""
+        return 3 == self.get_power_mode()
 
     def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
         tmp = 0
-        po = _check_value(pressure_oversampling, range(6),
+        po = check_value(pressure_oversampling, range(6),
                           f"Invalid value pressure_oversampling: {pressure_oversampling}")
-        to = _check_value(temperature_oversampling, range(6),
+        to = check_value(temperature_oversampling, range(6),
                           f"Invalid value temperature_oversampling: {temperature_oversampling}")
         tmp |= po
         tmp |= to << 3
-        self._write_register(0x1C, tmp, 1)
+        self._connection.write_reg(reg_addr=0x1C, value=tmp, bytes_count=1)
         self._oss_t = temperature_oversampling
         self._oss_p = pressure_oversampling
 
     def set_sampling_period(self, period: int):
-        p = _check_value(period, range(18),
+        p = check_value(period, range(18),
                          f"Invalid value output data rates: {period}")
-        self._write_register(0x1D, p, 1)
+        self._connection.write_reg(reg_addr=0x1D, value=p, bytes_count=1)
         self._sampling_period = period
 
     def set_iir_filter(self, value):
         """Коэффициент IIR-фильтра"""
-        p = _check_value(value, range(8),
+        p = check_value(value, range(8),
                          f"Invalid value iir_filter: {value}")
-        self._write_register(0x1F, p, 1)
+        self._connection.write_reg(reg_addr=0x1F, value=p, bytes_count=1)
         self._IIR = value
 
     @micropython.native
@@ -322,12 +317,12 @@ class Bmp390(BaseSensor, Iterator):
         return total
 
     # Iterator
-    def __next__(self) -> [tuple, float, None]:
-        if not self._enable_temperature and not self._enable_pressure:
+    def __next__(self) -> [None, float, measured_values_bmp390]:
+        if not self.is_continuously_mode():
             return
         temperature = self.get_temperature()
         if self._enable_temperature and not self._enable_pressure:
-            return temperature
+            return measured_values_bmp390(T=temperature, P=None)
         if self._enable_pressure and not self._enable_temperature:
-            return self.get_pressure()
-        return self.get_pressure(), temperature
+            return measured_values_bmp390(T=None, P=self.get_pressure())
+        return measured_values_bmp390(T=temperature, P=self.get_pressure())
