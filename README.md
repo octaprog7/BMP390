@@ -9,7 +9,7 @@ Supply voltage BMP390 3.3 Volts or 5V!
 3. SDA
 4. SCL
 
-Upload micropython firmware to the NANO(ESP, etc) board, and then two files: main.py and bmp390.py. 
+Upload micropython firmware to the NANO(ESP, etc) board, and then two files: main.py and bmp390mod.py. 
 Then open main.py in your IDE and run it.
 
 # Pictures
