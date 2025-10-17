@@ -8,7 +8,7 @@ from machine import Pin
 
 
 @micropython.native
-def check_value(value: [int, None], valid_range: [range, tuple], error_msg: str) -> [int, None]:
+def check_value(value: int | None, valid_range: range | tuple, error_msg: str) -> int | None:
     if value is None:
         return value
     if value not in valid_range:
@@ -16,7 +16,7 @@ def check_value(value: [int, None], valid_range: [range, tuple], error_msg: str)
     return value
 
 
-def get_error_str(val_name: str, val: int, rng: [range, tuple]) -> str:
+def get_error_str(val_name: str, val: int, rng: range | tuple) -> str:
     """Возвращает подробное сообщение об ошибке.
     val_name - имя переменной в коде;
     val - значение переменной val_name;
@@ -39,7 +39,7 @@ def all_none(*args):
 class Device:
     """Класс - основа датчика"""
 
-    def __init__(self, adapter: bus_service.BusAdapter, address: [int, Pin], big_byte_order: bool):
+    def __init__(self, adapter: bus_service.BusAdapter, address: int | Pin, big_byte_order: bool):
         """Базовый класс Устройство.
         Если big_byte_order равен True -> порядок байтов в регистрах устройства «big»
         (Порядок от старшего к младшему), в противном случае порядок байтов в регистрах "little"
@@ -97,7 +97,7 @@ class DeviceEx(Device):
         return self.adapter.read_register(self.address, reg_addr, bytes_count)
 
     # BaseSensor
-    def write_reg(self, reg_addr: int, value: [int, bytes, bytearray], bytes_count) -> int:
+    def write_reg(self, reg_addr: int, value: int | bytes | bytearray, bytes_count) -> int:
         """записывает данные value в датчик, по адресу reg_addr.
         bytes_count - кол-во записываемых данных.
         Добавил 25.01.2024"""
@@ -169,11 +169,11 @@ class ITemperatureSensor:
     """Вспомогательный или основной датчик температуры"""
 
     def enable_temp_meas(self, enable: bool = True):
-        """Включает измерение температуры при enable в Истина
+        """Включает измерение температуры при enable Истина
         Для переопределения программистом!!!"""
         raise NotImplementedError
 
-    def get_temperature(self) -> [int, float]:
+    def get_temperature(self) -> int | float:
         """Возвращает температуру корпуса датчика в градусах Цельсия!
         Для переопределения программистом!!!"""
         raise NotImplementedError
@@ -185,7 +185,7 @@ class ITemperatureSensor:
 class IPower:
     """интерфейс управления мощностью потребления устройства"""
 
-    def set_power_level(self, level: [int, None] = 0) -> int:
+    def set_power_level(self, level: int | None = 0) -> int:
         """level >=0 or None
         Устанавливает режим мощности.
         level равен 0 - устройство выполняет все свои функции (максимальное энергопотребление)
