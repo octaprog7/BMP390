@@ -16,7 +16,7 @@ def _calibration_regs_addr() -> iter:
     """возвращает кортеж из адреса регистра, размера значения в байтах, типа значения (u-unsigned, s-signed)"""
     start_addr = 0x31
     tpl = ('1b', '2h', '2H')
-    #возвращает итератор с адресами внутренних регистров датчика, хранящих калибровочные коэффициенты
+    # возвращает итератор с адресами внутренних регистров датчика, хранящих калибровочные коэффициенты
     val_type = "22011002200100"
     for item in val_type:
         v_size, v_type = tpl[int(item)]
@@ -33,19 +33,19 @@ event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
 class Bmp390(IBaseSensorEx, IDentifier, Iterator):
     """Class for work with Bosh BMP180 pressure sensor"""
 
-    def __init__(self, adapter: bus_service.BusAdapter, address=0xEE >> 1,
+    def __init__(self, adapter: bus_service.BusAdapter, address=0x77,
                  oversample_temp=0b11, oversample_press=0b11, iir_filter=0):
         """i2c - объект класса I2C; baseline_pressure - давление на уровне моря в Pa в твоей(!) местности;;
         oversample_settings (0..5) - точность измерения 0-грубо но быстро, 5-медленно, но точно;
-        address - адрес датчика (0xEF (read) and 0xEE (write) from datasheet)
+        address - адрес датчика;
         iir_filter=0..7; 0 - off, 7 - max value
 
         i2c is an object of the I2C class; baseline_pressure - sea level pressure in Pa in your(!) area;
         oversample_settings (0..5) - measurement reliability 0-coarse but fast, 5-slow but accurate;"""
         # super().__init__(adapter, address, False)
         self._connection = DeviceEx(adapter=adapter, address=address, big_byte_order=False)
-        self._buf_2 = bytearray((0 for _ in range(2)))  # для _read_buf_from_mem
-        self._buf_3 = bytearray((0 for _ in range(3)))  # для _read_buf_from_mem
+        self._buf_2 = bytearray(2)  # для _read_buf_from_mem
+        self._buf_3 = bytearray(3)  # для _read_buf_from_mem
         self._t_lin = None  # for pressure calculation
         # for temperature only!
         self._oss_t = check_value(oversample_temp, range(6),
@@ -317,7 +317,7 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
         return total
 
     # Iterator
-    def __next__(self) -> [None, float, measured_values_bmp390]:
+    def __next__(self) -> None | float | measured_values_bmp390:
         if not self.is_continuously_mode():
             return
         temperature = self.get_temperature()
