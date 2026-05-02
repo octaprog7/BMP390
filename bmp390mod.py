@@ -354,21 +354,21 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
                           f"Invalid value temperature_oversampling: {temperature_oversampling}")
         tmp |= po
         tmp |= to << 3
-        self._connection.write_reg(reg_addr=0x1C, value=tmp, bytes_count=1)
+        self._connection.write_reg(reg_addr=_REG_OSR, value=tmp, bytes_count=1)
         self._oss_t = temperature_oversampling
         self._oss_p = pressure_oversampling
 
     def set_sampling_period(self, period: int):
         p = check_value(period, range(18),
                          f"Invalid value output data rates: {period}")
-        self._connection.write_reg(reg_addr=0x1D, value=p, bytes_count=1)
+        self._connection.write_reg(reg_addr=_REG_ODR, value=p, bytes_count=1)
         self._sampling_period = period
 
     def set_iir_filter(self, value):
         """Коэффициент IIR-фильтра"""
         p = check_value(value, range(8),
                          f"Invalid value iir_filter: {value}")
-        self._connection.write_reg(reg_addr=0x1F, value=p << 1, bytes_count=1)  # сдвиг на 1 бит! Биты 3:1
+        self._connection.write_reg(reg_addr=_REG_CONFIG, value=p << 1, bytes_count=1)  # сдвиг на 1 бит! Биты 3:1
         self._IIR = value
 
     @micropython.native
