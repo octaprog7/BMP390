@@ -1,0 +1,24 @@
+{
+  "name": "bmp390",
+  "version": "1.1.0",
+  "author": "octaprog7",
+  "urls": [
+    [
+      "bmp390mod.py",
+      "github:octaprog7/BMP390/bmp390mod.py"
+    ],
+    [
+      "sensor_pack_2/__init__.py",
+      "github:octaprog7/BMP390/sensor_pack_2/__init__.py"
+    ],
+    [
+      "sensor_pack_2/base_sensor.py",
+      "github:octaprog7/BMP390/sensor_pack_2/base_sensor.py"
+    ],
+    [
+      "sensor_pack_2/bus_service.py",
+      "github:octaprog7/BMP390/sensor_pack_2/bus_service.py"
+    ]
+  ],
+  "deps": []
+}
