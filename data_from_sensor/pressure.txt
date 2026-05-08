@@ -1,102 +1,76 @@
-chip_id: sn_bmp390(chip_id=96, rev_id=1)
+chip_id: SensorID(chip_id=96, revision_id=1, spare1=None, spare2=None)
 pwr mode: 0
 Calibration data: [27789, 19738, -7, 7034, 5602, 6, 1, 19010, 22976, 3, -6, 3915, 5, -11]
 Event: event__bmp390(itf_act_pt=False, por_detected=True); Int status: 0; FIFO length: 0
 Режим однократных измерений по запросу!
 pwr mode: 0
 время преобразования в [мкс]: 234
-Temperature: 26.50587 °C; pressure: 99611.97 Pa (747.1516 mm Hg); pwr_mode: 0
-Temperature: 26.50133 °C; pressure: 99611.23 Pa (747.146 mm Hg); pwr_mode: 0
-Temperature: 26.49675 °C; pressure: 99611.15 Pa (747.1454 mm Hg); pwr_mode: 0
-Temperature: 26.49375 °C; pressure: 99611.18 Pa (747.1456 mm Hg); pwr_mode: 0
-Temperature: 26.49106 °C; pressure: 99610.82 Pa (747.1429 mm Hg); pwr_mode: 0
-Temperature: 26.48846 °C; pressure: 99611.45 Pa (747.1476 mm Hg); pwr_mode: 0
-Temperature: 26.48637 °C; pressure: 99611.59 Pa (747.1487 mm Hg); pwr_mode: 0
-Temperature: 26.48524 °C; pressure: 99611.66 Pa (747.1492 mm Hg); pwr_mode: 0
-Temperature: 26.48395 °C; pressure: 99611.75 Pa (747.1499 mm Hg); pwr_mode: 0
-Temperature: 26.48269 °C; pressure: 99611.74 Pa (747.1498 mm Hg); pwr_mode: 0
-Temperature: 26.48145 °C; pressure: 99611.25 Pa (747.1461 mm Hg); pwr_mode: 0
-Temperature: 26.48038 °C; pressure: 99611.56 Pa (747.1485 mm Hg); pwr_mode: 0
-Temperature: 26.47943 °C; pressure: 99611.34 Pa (747.1468 mm Hg); pwr_mode: 0
-Temperature: 26.47901 °C; pressure: 99611.84 Pa (747.1505 mm Hg); pwr_mode: 0
-Temperature: 26.48 °C; pressure: 99611.59 Pa (747.1487 mm Hg); pwr_mode: 0
-Temperature: 26.47914 °C; pressure: 99611.36 Pa (747.147 mm Hg); pwr_mode: 0
-Temperature: 26.47938 °C; pressure: 99611.38 Pa (747.1471 mm Hg); pwr_mode: 0
-Temperature: 26.47927 °C; pressure: 99611.48 Pa (747.1479 mm Hg); pwr_mode: 0
-Temperature: 26.47844 °C; pressure: 99611.39 Pa (747.1472 mm Hg); pwr_mode: 0
-Temperature: 26.47782 °C; pressure: 99611.3 Pa (747.1465 mm Hg); pwr_mode: 0
-Temperature: 26.47648 °C; pressure: 99610.47 Pa (747.1403 mm Hg); pwr_mode: 0
-Temperature: 26.4768 °C; pressure: 99611.32 Pa (747.1467 mm Hg); pwr_mode: 0
-Temperature: 26.47615 °C; pressure: 99611.47 Pa (747.1478 mm Hg); pwr_mode: 0
-Temperature: 26.47524 °C; pressure: 99611.93 Pa (747.1512 mm Hg); pwr_mode: 0
-Temperature: 26.47513 °C; pressure: 99612.26 Pa (747.1537 mm Hg); pwr_mode: 0
-Temperature: 26.47548 °C; pressure: 99612.3 Pa (747.154 mm Hg); pwr_mode: 0
-Temperature: 26.47531 °C; pressure: 99612.23 Pa (747.1534 mm Hg); pwr_mode: 0
-Temperature: 26.4743 °C; pressure: 99611.84 Pa (747.1505 mm Hg); pwr_mode: 0
-Temperature: 26.47385 °C; pressure: 99612.05 Pa (747.1521 mm Hg); pwr_mode: 0
-Temperature: 26.4735 °C; pressure: 99612.51 Pa (747.1556 mm Hg); pwr_mode: 0
-Temperature: 26.47295 °C; pressure: 99612.77 Pa (747.1576 mm Hg); pwr_mode: 0
-Temperature: 26.47194 °C; pressure: 99612.11 Pa (747.1526 mm Hg); pwr_mode: 0
-Temperature: 26.47119 °C; pressure: 99612.65 Pa (747.1566 mm Hg); pwr_mode: 0
+Temperature: 27.68644 °C; pressure: 98503.66 Pa (738.8386 mm Hg);
+Temperature: 27.67809 °C; pressure: 98503.59 Pa (738.838 mm Hg);
+Temperature: 27.67256 °C; pressure: 98502.93 Pa (738.8331 mm Hg);
+Temperature: 27.66796 °C; pressure: 98503.52 Pa (738.8375 mm Hg);
+Temperature: 27.66306 °C; pressure: 98503.8 Pa (738.8395 mm Hg);
+Temperature: 27.65952 °C; pressure: 98504.34 Pa (738.8437 mm Hg);
+Temperature: 27.65615 °C; pressure: 98505.18 Pa (738.8499 mm Hg);
+Temperature: 27.65346 °C; pressure: 98505.02 Pa (738.8488 mm Hg);
+Temperature: 27.65174 °C; pressure: 98504.22 Pa (738.8427 mm Hg);
+Temperature: 27.64958 °C; pressure: 98504.32 Pa (738.8435 mm Hg);
+Temperature: 27.64781 °C; pressure: 98503.91 Pa (738.8405 mm Hg);
+Temperature: 27.64632 °C; pressure: 98502.98 Pa (738.8334 mm Hg);
+Temperature: 27.64537 °C; pressure: 98502.91 Pa (738.8329 mm Hg);
+Temperature: 27.64478 °C; pressure: 98503.34 Pa (738.8362 mm Hg);
+Temperature: 27.6451 °C; pressure: 98503.38 Pa (738.8364 mm Hg);
+Temperature: 27.64649 °C; pressure: 98504.27 Pa (738.8431 mm Hg);
+Temperature: 27.6477 °C; pressure: 98504.23 Pa (738.8428 mm Hg);
+Temperature: 27.64947 °C; pressure: 98504.38 Pa (738.8439 mm Hg);
+Temperature: 27.65035 °C; pressure: 98504.09 Pa (738.8418 mm Hg);
+Temperature: 27.6503 °C; pressure: 98503.43 Pa (738.8368 mm Hg);
+Temperature: 27.65024 °C; pressure: 98503.54 Pa (738.8376 mm Hg);
+Temperature: 27.6483 °C; pressure: 98504.52 Pa (738.845 mm Hg);
+Temperature: 27.64685 °C; pressure: 98504.95 Pa (738.8482 mm Hg);
+Temperature: 27.64488 °C; pressure: 98505.23 Pa (738.8503 mm Hg);
+Temperature: 27.64356 °C; pressure: 98505.63 Pa (738.8533 mm Hg);
+Temperature: 27.64197 °C; pressure: 98505.5 Pa (738.8524 mm Hg);
+Temperature: 27.64078 °C; pressure: 98504.66 Pa (738.8461 mm Hg);
+Temperature: 27.63944 °C; pressure: 98504.98 Pa (738.8484 mm Hg);
+Temperature: 27.63743 °C; pressure: 98505.14 Pa (738.8496 mm Hg);
+Temperature: 27.63605 °C; pressure: 98505.27 Pa (738.8506 mm Hg);
+Temperature: 27.63444 °C; pressure: 98505.7 Pa (738.8539 mm Hg);
+Temperature: 27.63323 °C; pressure: 98505.57 Pa (738.8528 mm Hg);
+Temperature: 27.63188 °C; pressure: 98504.49 Pa (738.8448 mm Hg);
 Режим непрерывных периодических измерений!
-pwr mode: 3
-T=26.47°C, P=99612.65 Pa, time=7149, min_P=99612.65, max_P=99612.65
-T=26.47°C, P=99614.65 Pa, time=15012, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.52 Pa, time=22872, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.19 Pa, time=30733, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.90 Pa, time=38590, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99614.18 Pa, time=46443, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99612.97 Pa, time=54304, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.38 Pa, time=62164, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.59 Pa, time=70024, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99612.68 Pa, time=77881, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99614.09 Pa, time=85737, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99614.07 Pa, time=93564, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.63 Pa, time=101422, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.55 Pa, time=109279, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.16 Pa, time=117133, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99612.86 Pa, time=124993, min_P=99612.65, max_P=99614.65
-T=26.48°C, P=99613.22 Pa, time=132848, min_P=99612.65, max_P=99614.65
-T=26.47°C, P=99612.72 Pa, time=140710, min_P=99612.65, max_P=99614.65
-T=26.47°C, P=99613.26 Pa, time=148571, min_P=99612.65, max_P=99614.65
-T=26.47°C, P=99613.30 Pa, time=156425, min_P=99612.65, max_P=99614.65
-T=26.47°C, P=99613.72 Pa, time=164283, min_P=99612.65, max_P=99614.65
-T=26.47°C, P=99614.73 Pa, time=172143, min_P=99612.65, max_P=99614.73
-T=26.47°C, P=99614.56 Pa, time=179999, min_P=99612.65, max_P=99614.73
-T=26.47°C, P=99614.68 Pa, time=187828, min_P=99612.65, max_P=99614.73
-T=26.46°C, P=99614.43 Pa, time=195688, min_P=99612.65, max_P=99614.73
-T=26.47°C, P=99614.60 Pa, time=203546, min_P=99612.65, max_P=99614.73
-T=26.47°C, P=99614.77 Pa, time=211403, min_P=99612.65, max_P=99614.77
-T=26.46°C, P=99613.78 Pa, time=219236, min_P=99612.65, max_P=99614.77
-T=26.46°C, P=99614.58 Pa, time=227098, min_P=99612.65, max_P=99614.77
-T=26.47°C, P=99620.14 Pa, time=234958, min_P=99612.65, max_P=99620.14
-T=26.46°C, P=99618.90 Pa, time=242818, min_P=99612.65, max_P=99620.14
-T=26.46°C, P=99618.99 Pa, time=250647, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99617.21 Pa, time=258506, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99616.04 Pa, time=266364, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99615.44 Pa, time=274222, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99615.85 Pa, time=282077, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99614.82 Pa, time=289938, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99614.90 Pa, time=297792, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99614.46 Pa, time=305649, min_P=99612.65, max_P=99620.14
-T=26.45°C, P=99613.83 Pa, time=313507, min_P=99612.65, max_P=99620.14
-T=26.44°C, P=99614.16 Pa, time=321367, min_P=99612.65, max_P=99620.14
-T=26.44°C, P=99614.26 Pa, time=329221, min_P=99612.65, max_P=99620.14
-T=26.44°C, P=99613.57 Pa, time=337077, min_P=99612.65, max_P=99620.14
-T=26.44°C, P=99615.23 Pa, time=344936, min_P=99612.65, max_P=99620.14
-T=26.44°C, P=99615.22 Pa, time=352773, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.25 Pa, time=360626, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99614.97 Pa, time=368476, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.19 Pa, time=376329, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99614.34 Pa, time=384183, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99614.76 Pa, time=392038, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.18 Pa, time=399889, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.00 Pa, time=407745, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.39 Pa, time=415599, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.76 Pa, time=423459, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99614.31 Pa, time=431321, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.05 Pa, time=439181, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.71 Pa, time=447041, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.46 Pa, time=454899, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.77 Pa, time=462761, min_P=99612.65, max_P=99620.14
-T=26.43°C, P=99615.92 Pa, time=470614, min_P=99612.65, max_P=99620.14
+pwr mode: 2
+T=27.63°C, P=98504.49 Pa, time=7179, min_P=98504.49, max_P=98504.49
+T=27.63°C, P=98504.55 Pa, time=15046, min_P=98504.49, max_P=98504.55
+T=27.63°C, P=98503.96 Pa, time=22911, min_P=98503.96, max_P=98504.55
+T=27.64°C, P=98503.78 Pa, time=30772, min_P=98503.78, max_P=98504.55
+T=27.64°C, P=98503.58 Pa, time=38632, min_P=98503.58, max_P=98504.55
+T=27.63°C, P=98504.34 Pa, time=46491, min_P=98503.58, max_P=98504.55
+T=27.63°C, P=98503.95 Pa, time=54350, min_P=98503.58, max_P=98504.55
+T=27.63°C, P=98504.34 Pa, time=62190, min_P=98503.58, max_P=98504.55
+T=27.63°C, P=98504.83 Pa, time=70051, min_P=98503.58, max_P=98504.83
+T=27.63°C, P=98504.13 Pa, time=77912, min_P=98503.58, max_P=98504.83
+T=27.63°C, P=98503.11 Pa, time=85772, min_P=98503.11, max_P=98504.83
+T=27.63°C, P=98503.48 Pa, time=93635, min_P=98503.11, max_P=98504.83
+T=27.63°C, P=98504.67 Pa, time=101498, min_P=98503.11, max_P=98504.83
+T=27.63°C, P=98504.96 Pa, time=109360, min_P=98503.11, max_P=98504.96
+T=27.63°C, P=98504.70 Pa, time=117221, min_P=98503.11, max_P=98504.96
+T=27.62°C, P=98504.79 Pa, time=125083, min_P=98503.11, max_P=98504.96
+T=27.62°C, P=98503.51 Pa, time=132945, min_P=98503.11, max_P=98504.96
+T=27.62°C, P=98504.00 Pa, time=140808, min_P=98503.11, max_P=98504.96
+T=27.62°C, P=98503.13 Pa, time=148667, min_P=98503.11, max_P=98504.96
+T=27.62°C, P=98502.82 Pa, time=156528, min_P=98502.82, max_P=98504.96
+T=27.62°C, P=98502.38 Pa, time=164389, min_P=98502.38, max_P=98504.96
+T=27.61°C, P=98502.18 Pa, time=172249, min_P=98502.18, max_P=98504.96
+T=27.61°C, P=98502.34 Pa, time=180110, min_P=98502.18, max_P=98504.96
+T=27.61°C, P=98502.38 Pa, time=187969, min_P=98502.18, max_P=98504.96
+T=27.61°C, P=98503.54 Pa, time=195832, min_P=98502.18, max_P=98504.96
+T=27.61°C, P=98503.82 Pa, time=203692, min_P=98502.18, max_P=98504.96
+T=27.61°C, P=98503.81 Pa, time=211553, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98503.39 Pa, time=219406, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98503.74 Pa, time=227243, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98504.07 Pa, time=235101, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98503.84 Pa, time=242963, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98504.88 Pa, time=250825, min_P=98502.18, max_P=98504.96
+T=27.60°C, P=98503.59 Pa, time=258686, min_P=98502.18, max_P=98504.96
+T=27.59°C, P=98502.69 Pa, time=266550, min_P=98502.18, max_P=98504.96
