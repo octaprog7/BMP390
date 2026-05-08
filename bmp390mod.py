@@ -6,6 +6,7 @@ import micropython
 from micropython import const
 from collections import namedtuple
 from sensor_pack_2 import bus_service
+from sensor_pack_2.bmp_common import IBMPCommon, OversamplingCoeff, MeasChannels, MeasuredParams, SensorID
 from sensor_pack_2.base_sensor import IBaseSensorEx, Iterator, IDentifier, DeviceEx, check_value
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
@@ -46,7 +47,6 @@ def _calibration_regs_addr() -> iter:
         start_addr += int(v_size)
 
 serial_number_bmp390 = namedtuple("sn_bmp390", "chip_id rev_id")
-measured_values_bmp390 = namedtuple("meas_vals_bmp390", "T P")
 data_status_bmp390 = namedtuple("data_status_bmp390", "temp_ready press_ready cmd_decoder_ready")
 int_status_bmp390 = namedtuple("int_status_bmp390", "data_ready fifo_is_full fifo_watermark")
 event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
@@ -55,7 +55,7 @@ event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
 # Bit 2 - conf_err; sensor configuration error detected (only working in normal mode). Cleared on read.
 error_flags_bmp390 = namedtuple("error_flags_bmp390", "fatal_err cmd_exec_failed conf_err")
 
-class Bmp390(IBaseSensorEx, IDentifier, Iterator):
+class Bmp390(IBaseSensorEx, IDentifier, Iterator, IBMPCommon):
     """Class for work with Bosh BMP390 pressure sensor."""
 
     def __init__(self, adapter: bus_service.BusAdapter, address=0x77,
@@ -97,17 +97,19 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
         del self._buf_2
 
     @staticmethod
-    def _check_cc_index(index: int):
+    def _check_cc(index: int):
         """Проверяет на верность индекс калибровочного коэффициента."""
         check_value(index, range(14), f"Invalid index value: {index}")
 
-    def get_calibration_coefficient(self, index: int) -> int:
+    def get_calibration(self, index: int = None) -> int:
         """возвращает калибровочный коэффициент по его индексу (0..13).
         returns the calibration coefficient by its index (0..13)"""
-        self._check_cc_index(index)
+        if index is None:
+            return len(self._cfa)
+        self._check_cc(index)
         return self._cfa[index]
 
-    def refresh_config_cache(self) -> None:
+    def refresh_config(self) -> None:
         """Считывает текущие настройки из регистров датчика в поля экземпляра класса."""
         reg_osr = self._connection.read_reg(_REG_OSR, 1)[0]
         self._oss_p = reg_osr & 0b111
@@ -127,7 +129,7 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
     @micropython.native
     def _precalculate(self):
         """предварительно вычисленные значения"""
-        get_cc = self.get_calibration_coefficient
+        get_cc = self.get_calibration
         # для расчета температуры
         self.par_t1 = get_cc(0) * 2 ** 8  #
         self.par_t2 = get_cc(1) / 2 ** 30  #
@@ -177,13 +179,13 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
         return len(self._cfa)
 
     # IDentifier
-    def get_id(self) -> serial_number_bmp390:
+    def get_id(self) -> SensorID:
         """Возвращает идентификатор датчика и его revision ID.
         Returns the ID and revision ID of the sensor."""
         buf = self._buf_2
         self._connection.read_buf_from_mem(address=_REG_CHIP_ID, buf=buf, address_size=1)
         # chip id, rev_id
-        return serial_number_bmp390(chip_id=buf[0], rev_id=buf[1])
+        return SensorID(buf[0], buf[1], None, None)
 
     def soft_reset(self, reset_or_flush: bool = True):
         """программный сброс датчика.
@@ -298,82 +300,133 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
         self._connection.read_buf_from_mem(address=_REG_FIFO_LEN, buf=buf, address_size=1)
         return self._connection.unpack(fmt_char="H", source=buf)[0]
 
-    def start_measurement(self, enable_press: bool = True, enable_temp: bool = True, mode: int = 2):
+    def start_measurement(self):
         """ # mode: 0 - sleep, 1-forced, 2-normal (continuously)"""
-        if not mode in range(3):
-            raise ValueError(f"Invalid mode value: {mode}")
         tmp = 0
-        if enable_press:
+        if self._enable_pressure:
             tmp |= 0b01
-        else:
-            tmp &= ~0b01
-
-        if enable_temp:
+        if self._enable_temperature:
             tmp |= 0b10
-        else:
-            tmp &= ~0b10
 
-        # обнуляю биты 4 и 5
-        tmp &= ~0b0011_0000
-        if 0 == mode:
-            pass  # sleep mode
-        if 1 == mode:
+        if 0 == self._mode:
+            tmp &= ~0b0011_0000  # сброс битов для режима sleep mode
+        if 1 == self._mode:
             tmp |= 0b0001_0000  # forced mode (режим однократных измерений)
-        if 2 == mode:
+        if 2 == self._mode:
             tmp |= 0b0011_0000  # continuous mode (режим непрерывных периодических измерений)
-        # save
-        self._connection.write_reg(reg_addr=0x1B, value=tmp, bytes_count=1)
-        self._mode = mode
-        self._enable_pressure = enable_press
-        self._enable_temperature = enable_temp
+        # записываю в датчик. АЦП запускается автоматически при выходе из sleep mode.
+        self._connection.write_reg(reg_addr=_REG_PWR_CTRL, value=tmp, bytes_count=1)
 
-    def get_power_mode(self) -> int:
-        """Возвращает текущий режим работы датчика:
-        0 - сон
-        1 или 2 - однократное измерение
-        3 - периодические измерения"""
-        tmp = self._connection.read_reg(reg_addr=0x1B, bytes_count=1)[0]
-        return (0b11_0000 & tmp) >> 4
+    def set_power_mode(self,  value: int | None = None) -> int:
+        """Устанавливает или возвращает режим работы датчика.
+        Если value is None -> считывает текущий режим из регистра PWR_CTRL (0x1B)
+        и возвращает его (0=sleep, 1=forced, 2=normal). Кэш self._mode обновляется.
+        Иначе -> сохраняет указанный режим во внутренний кэш.
+        Запись в регистр PWR_CTRL произойдёт только при вызове start_measurement().
+
+        Args:
+            value (int | None): Режим работы. None = прочитать из регистра.
+        Returns:
+            int | None: Текущий режим, если value=None, иначе None.
+        Raises:
+            ValueError: Если value не в диапазоне 0..2."""
+        if value is None:
+            reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
+            raw_mode = (reg >> 4) & 0b11  # сырые биты: 0, 1 или 3
+
+            # аппаратное 3 -> внутреннее 2 (Normal)
+            if 3 == raw_mode:
+                self._mode = 2
+            else:
+                self._mode = raw_mode  # 0 и 1 совпадают
+            return self._mode
+
+        if not value in range(3):
+            raise ValueError(f"Invalid mode value: {value}")
+        self._mode = value
+        return self._mode
 
     def is_single_shot_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме однократных измерений,
         каждое из которых запускается методом start_measurement"""
-        _pm = self.get_power_mode()
-        return 2 == _pm or 1 == _pm
+        return 1 == self.set_power_mode(None)
 
     def is_continuously_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме многократных измерений,
         производимых автоматически. Процесс запускается методом start_measurement"""
-        return 3 == self.get_power_mode()
+        return 2 == self.set_power_mode(None)
 
-    def set_oversampling(self, pressure_oversampling: int, temperature_oversampling: int):
-        tmp = 0
-        po = check_value(pressure_oversampling, range(6),
-                          f"Invalid value pressure_oversampling: {pressure_oversampling}")
-        to = check_value(temperature_oversampling, range(6),
-                          f"Invalid value temperature_oversampling: {temperature_oversampling}")
-        tmp |= po
-        tmp |= to << 3
-        self._connection.write_reg(reg_addr=_REG_OSR, value=tmp, bytes_count=1)
-        self._oss_t = temperature_oversampling
-        self._oss_p = pressure_oversampling
+    def set_oversampling(self, temp: int | None = None, press: int | None = None) -> OversamplingCoeff:
+        """Устанавливает oversampling. Записывает в регистр OSR (0x1C) только если заданы параметры.
+        Всегда считывает текущее состояние из регистра, обновляет кэш и возвращает OversamplingCoeff."""
+        if temp is not None or press is not None:
+            valid_rng = range(6)
+            # Берём недостающие значения из кэша, чтобы сформировать полный байт без чтения регистра
+            t = check_value(temp, valid_rng, f"Invalid temperature oversample: {temp}") if temp is not None else self._oss_t
+            p = check_value(press, valid_rng, f"Invalid pressure oversample: {press}") if press is not None else self._oss_p
+            self._connection.write_reg(_REG_OSR, (t << 3) | p, 1)
 
-    def set_sampling_period(self, period: int):
-        p = check_value(period, range(18),
-                         f"Invalid value output data rates: {period}")
-        self._connection.write_reg(reg_addr=_REG_ODR, value=p, bytes_count=1)
-        self._sampling_period = period
+        # чтение и возврат
+        reg = self._connection.read_reg(_REG_OSR, 1)[0]
+        self._oss_t = (reg >> 3) & 0b111
+        self._oss_p = reg & 0b111
+        return OversamplingCoeff(temperature=self._oss_t, pressure=self._oss_p)
 
-    def set_iir_filter(self, value):
-        """Коэффициент IIR-фильтра"""
-        p = check_value(value, range(8),
-                         f"Invalid value iir_filter: {value}")
-        self._connection.write_reg(reg_addr=_REG_CONFIG, value=p << 1, bytes_count=1)  # сдвиг на 1 бит! Биты 3:1
-        self._IIR = value
+    def set_sampling_period(self, value: int | None = None) -> int:
+        """Устанавливает или возвращает период дискретизации (ODR).
+        Если period != None -> записывает значение в регистр 0x1D.
+        Всегда считывает текущее состояние из регистра, обновляет кэш и возвращает его."""
+        if value is not None:
+            p = check_value(value, range(18), f"Invalid value output data rates: {value}")
+            self._connection.write_reg(reg_addr=_REG_ODR, value=p, bytes_count=1)
+        # Читаю состояние из регистра
+        val = self._connection.read_reg(_REG_ODR, 1)[0] & 0b11111
+        self._sampling_period = val
+        return val
+
+    def set_iir_filter(self, temp: int | None = None, press: int | None = None) -> tuple[int | None, int | None]:
+        """Устанавливает коэффициент ФНЧ.
+        BMP390 имеют один общий фильтр для T и P (регистр CONFIG, биты 3:1)."""
+
+        if temp is not None or press is not None:
+            # Выбираю значение
+            val = temp if temp is not None else press
+            c = check_value(val, range(8), f"Invalid IIR filter: {val}")
+
+            # Читаю CONFIG
+            reg = self._connection.read_reg(_REG_CONFIG, 1)[0]
+            # Маска 0xF1 сбрасывает биты 3,2,1. Оставляю биты 7..4 и 0
+            reg = (reg & 0xF1) | (c << 1)
+
+            self._connection.write_reg(_REG_CONFIG, reg, 1)
+
+        # Читаем подтверждённое значение
+        reg = self._connection.read_reg(_REG_CONFIG, 1)[0]
+        iir_val = (reg >> 1) & 0x07
+
+        return iir_val, iir_val
+
+    def set_channels(self, temp_en=None, press_en=None) -> MeasChannels | None:
+        """Включает/выключает каналы. Если аргументы != None -> записывает в PWR_CTRL (0x1B).
+        Всегда считывает текущее состояние из регистра, обновляет кэш и возвращает MeasChannels."""
+        if temp_en is not None or press_en is not None:
+            reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0] & 0b1111_1100
+            if temp_en is not None: self._enable_temperature = temp_en
+            if press_en is not None: self._enable_pressure = press_en
+            if self._enable_temperature: reg |= 0b10
+            if self._enable_pressure: reg |= 0b01
+            self._connection.write_reg(_REG_PWR_CTRL, reg, 1)
+
+        # Обязательное чтение и возврат
+        reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
+        self._enable_temperature = bool(reg & 0b10)
+        self._enable_pressure = bool(reg & 0b01)
+        return MeasChannels(temperature=self._enable_temperature, pressure=self._enable_pressure)
 
     @micropython.native
     def get_conversion_cycle_time(self) -> int:
-        """возвращает время преобразования в [мкс] датчиком температуры или давления в зависимости от его настроек"""
+        """возвращает время преобразования в [мкс] датчиком температуры или давления в зависимости от его настроек.
+        ВНИМАНИЕ: BMP390 возвращает микросекунды, BMP180/BMP280 — миллисекунды!"""
         k = 2020
         total = 234  # базовое время
 
@@ -388,12 +441,12 @@ class Bmp390(IBaseSensorEx, IDentifier, Iterator):
         return total
 
     # Iterator
-    def __next__(self) -> None | float | measured_values_bmp390:
+    def __next__(self) -> None | MeasuredParams:
         if not self.is_continuously_mode():
             return None
         temperature = self.get_temperature()
         if self._enable_temperature and not self._enable_pressure:
-            return measured_values_bmp390(T=temperature, P=None)
+            return MeasuredParams(temperature=temperature, pressure=None)
         if self._enable_pressure and not self._enable_temperature:
-            return measured_values_bmp390(T=None, P=self.get_pressure())
-        return measured_values_bmp390(T=temperature, P=self.get_pressure())
+            return MeasuredParams(temperature=None, pressure=self.get_pressure())
+        return MeasuredParams(temperature=temperature, pressure=self.get_pressure())

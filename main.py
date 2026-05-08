@@ -1,7 +1,7 @@
-from micropython import const
-from machine import I2C, Pin
 import bmp390mod
-import time
+from time import sleep_ms
+from machine import I2C, Pin
+from micropython import const
 from sensor_pack_2.bus_service import I2cAdapter
 
 
@@ -34,40 +34,48 @@ if __name__ == '__main__':
     # однократных измерений и был все время в режиме периодических измерений!!!
     # я не знаю, что это за глюк! Поэтому перед вызовом start_measurement(..) вызывайте soft_reset()!!
     ps.soft_reset()
-    print(f"pwr mode: {ps.get_power_mode()}")
-
-    calibration_data = [ps.get_calibration_coefficient(index) for index in range(14)]
+    print(f"pwr mode: {ps.set_power_mode(None)}")
+    _mx = ps.get_calibration(None)
+    calibration_data = [ps.get_calibration(index) for index in range(_mx)]
     print(f"Calibration data: {calibration_data}")
 
     print(f"Event: {ps.get_event()}; Int status: {ps.get_int_status()}; FIFO length: {ps.get_fifo_length()}")
     #
-    delay_func = time.sleep_ms
+    delay_func = sleep_ms
     #
-    ps.set_oversampling(pressure_oversampling=2, temperature_oversampling=3)
+    ps.set_oversampling(temp=3, press=2)
     ps.set_sampling_period(5)
     ps.set_iir_filter(2)
 
     print("Режим однократных измерений по запросу!")
-    print(f"pwr mode: {ps.get_power_mode()}")
+    print(f"pwr mode: {ps.set_power_mode(None)}")
     print(f"время преобразования в [мкс]: {ps.get_conversion_cycle_time()}")
+    ps.set_channels(temp_en=True, press_en=True)
+    ps.set_power_mode(value=1)
     for _ in range(ITERATIONS):
-        ps.start_measurement(enable_press=True, enable_temp=True, mode=1)
+        ps.start_measurement()
         delay_func(300)
         temperature_ready, pressure_ready, cmd_ready = ps.get_data_status()
         if cmd_ready and pressure_ready:
             t, p = ps.get_temperature(), ps.get_pressure()
-            pm = ps.get_power_mode()
-            print(f"Temperature: {t} \xB0C; pressure: {p} Pa ({pa_mmhg(p)} mm Hg); pwr_mode: {pm} ")
+            # pm = ps.set_power_mode(None) вызов этого метода обновит self._mode значением None
+            # а последующий вызов start_measurement() установит этот режим в регистр датчика!!!
+            print(f"Temperature: {t} \xB0C; pressure: {p} Pa ({pa_mmhg(p)} mm Hg);")
         else:
             print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
     #
     _min_p, _max_p = 1E6, 0
     print("Режим непрерывных периодических измерений!")
-    ps.start_measurement(enable_press=True, enable_temp=True, mode=2)
-    print(f"pwr mode: {ps.get_power_mode()}")
-    for values in ps:
+    ps.set_power_mode(value=2)
+    ps.start_measurement()
+    print(f"pwr mode: {ps.set_power_mode(None)}")
+    for index, values in enumerate(ps):
+        if index > ITERATIONS:
+            break
         delay_func(300)
-        t, p = values.T, values.P
+        if values is None:
+            continue  # данные не готовы, пропускаем итерацию
+        t, p = values.temperature, values.pressure
         tme = ps.get_sensor_time()
         _min_p = min(_min_p, p)
         _max_p = max(_max_p, p)
