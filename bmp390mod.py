@@ -6,8 +6,8 @@ import micropython
 from micropython import const
 from collections import namedtuple
 from sensor_pack_2 import bus_service
-from sensor_pack_2.bmp_common import IBMPCommon, OversamplingCoeff, MeasChannels, MeasuredParams, SensorID
-from sensor_pack_2.base_sensor import IBaseSensorEx, Iterator, IDentifier, DeviceEx, check_value
+from sensor_pack_2.bmp_common import IBaseAirPresSensor, OversamplingCoeff, MeasChannels, MeasuredParams, SensorID
+from sensor_pack_2.base_sensor import Iterator, DeviceEx, check_value
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
 # WARNING: do not connect "+" to 5V or the sensor will be damaged!
@@ -46,7 +46,6 @@ def _calibration_regs_addr() -> iter:
         yield int(start_addr), int(v_size), v_type
         start_addr += int(v_size)
 
-serial_number_bmp390 = namedtuple("sn_bmp390", "chip_id rev_id")
 data_status_bmp390 = namedtuple("data_status_bmp390", "temp_ready press_ready cmd_decoder_ready")
 int_status_bmp390 = namedtuple("int_status_bmp390", "data_ready fifo_is_full fifo_watermark")
 event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
@@ -55,7 +54,7 @@ event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
 # Bit 2 - conf_err; sensor configuration error detected (only working in normal mode). Cleared on read.
 error_flags_bmp390 = namedtuple("error_flags_bmp390", "fatal_err cmd_exec_failed conf_err")
 
-class Bmp390(IBaseSensorEx, IDentifier, Iterator, IBMPCommon):
+class Bmp390(IBaseAirPresSensor, Iterator):
     """Class for work with Bosh BMP390 pressure sensor."""
 
     def __init__(self, adapter: bus_service.BusAdapter, address=0x77,
