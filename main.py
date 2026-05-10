@@ -3,6 +3,7 @@ from time import sleep_ms
 from machine import I2C, Pin
 from micropython import const
 from sensor_pack_2.bus_service import I2cAdapter
+from sensor_pack_2.bmp_common import SensorMode
 
 
 def pa_mmhg(value: float) -> float:
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     # однократных измерений и был все время в режиме периодических измерений!!!
     # я не знаю, что это за глюк! Поэтому перед вызовом start_measurement(..) вызывайте soft_reset()!!
     ps.soft_reset()
-    print(f"pwr mode: {ps.set_power_mode(None)}")
+    # print(f"pwr mode: {ps.set_power_mode(None)}")
     _mx = ps.get_calibration(None)
     calibration_data = [ps.get_calibration(index) for index in range(_mx)]
     print(f"Calibration data: {calibration_data}")
@@ -49,26 +50,26 @@ if __name__ == '__main__':
 
     print("Режим однократных измерений по запросу!")
     print(f"pwr mode: {ps.set_power_mode(None)}")
-    print(f"время преобразования в [мкс]: {ps.get_conversion_cycle_time()}")
     ps.set_channels(temp_en=True, press_en=True)
-    ps.set_power_mode(value=1)
+    ps.set_power_mode(value=SensorMode.FORCED)
+    print(f"время преобразования в [мс]: {ps.get_conversion_cycle_time()}")
     for _ in range(ITERATIONS):
         ps.start_measurement()
         delay_func(300)
-        temperature_ready, pressure_ready, cmd_ready = ps.get_data_status()
+        ds = ps.get_data_status(raw=False)
+        temperature_ready, pressure_ready, cmd_ready = ds
         if cmd_ready and pressure_ready:
             t, p = ps.get_temperature(), ps.get_pressure()
-            # pm = ps.set_power_mode(None) вызов этого метода обновит self._mode значением None
-            # а последующий вызов start_measurement() установит этот режим в регистр датчика!!!
-            print(f"Temperature: {t} \xB0C; pressure: {p} Pa ({pa_mmhg(p)} mm Hg);")
+            print(f"Temperature: {t:.1f} \xB0C; pressure: {p:.1f} Pa ({pa_mmhg(p):.1f} mm Hg);")
         else:
             print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
     #
     _min_p, _max_p = 1E6, 0
     print("Режим непрерывных периодических измерений!")
-    ps.set_power_mode(value=2)
+    ps.set_power_mode(value=SensorMode.NORMAL)
     ps.start_measurement()
     print(f"pwr mode: {ps.set_power_mode(None)}")
+    print(f"время преобразования в [мс]: {ps.get_conversion_cycle_time()}")
     for index, values in enumerate(ps):
         if index > ITERATIONS:
             break
@@ -80,4 +81,4 @@ if __name__ == '__main__':
         _min_p = min(_min_p, p)
         _max_p = max(_max_p, p)
         if t is not None and p is not None:  # достаточно проверки на None
-            print(f"T={t:.2f}°C, P={p:.2f} Pa, time={tme}, min_P={_min_p}, max_P={_max_p}")
+            print(f"T={t:.2f}°C, P={p:.1f} Pa, time={tme}, min_P={_min_p:.1f}, max_P={_max_p:.1f}")
