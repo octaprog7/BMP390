@@ -22,6 +22,14 @@ MeasuredParams = namedtuple("MeasuredParams", "temperature pressure")
 # Неиспользуемые значения = None
 SensorID = namedtuple("SensorID","chip_id revision_id spare1 spare2")
 
+class SensorMode:
+    """режимы работы всех датчиков серии BMP"""
+    SLEEP      = 0  # Сон / Standby
+    FORCED     = 1  # Однократное измерение
+    NORMAL     = 2  # Периодическое непрерывное
+    CONTINUOUS = 3  # Непрерывное на макс. частоте (для BMP581)
+
+
 class IBMPCommon:
     """
     Унифицированный интерфейс для датчиков давления атмосферного воздуха.
@@ -109,5 +117,50 @@ class IBMPCommon:
 
 
 class IBaseAirPresSensor(IBaseSensorEx, IDentifier, IBMPCommon):
-    """Интерфейс для всех барометрических датчиков Bosch и не только их."""
-    pass
+    """Интерфейс для всех барометрических датчиков Bosch и не только их.
+    Example:
+        >>> sensor: IBaseAirPresSensor = Bmp581(adapter)
+        >>> sensor.start_measurement()
+        >>> if sensor.is_data_ready():
+        ...     t = sensor.get_temperature()
+        ...     p = sensor.get_pressure()
+    """
+
+    def is_data_ready(self) -> bool:
+        """Проверяет готовность новых данных температуры и/или давления.
+
+         Возвращает `True`, если датчик завершил преобразование и данные
+         доступны для чтения. В противном случае возвращает `False`.
+
+         Returns:
+             bool: `True` если данные готовы, `False` если измерение ещё
+                   выполняется или датчик находится в режиме ожидания.
+         """
+        raise NotImplementedError()
+
+    def get_temperature(self) -> float:
+        """Возвращает температуру окружающего воздуха в градусах Цельсия.
+        Returns:
+             float: Температура в градусах Цельсия [°C].
+
+         Raises:
+             OSError: Если шина недоступна или датчик не отвечает.
+             RuntimeError: Если данные не готовы (рекомендуется проверять
+                           `is_data_ready()` перед вызовом).
+         """
+        raise NotImplementedError()
+
+    def get_pressure(self) -> float:
+        """Возвращает компенсированное атмосферное давление.
+         Returns:
+             float: Давление в Паскалях [Па].
+
+         Raises:
+             OSError: Если шина недоступна или датчик не отвечает.
+             RuntimeError: Если канал давления отключён или данные не готовы.
+
+         Note:
+             Для перевода в мм рт. ст., гПа, PSI или атм используйте
+             вспомогательные функции преобразования в прикладном коде.
+         """
+        raise NotImplementedError()
