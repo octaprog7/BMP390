@@ -6,7 +6,8 @@ import micropython
 from micropython import const
 from collections import namedtuple
 from sensor_pack_2 import bus_service
-from sensor_pack_2.bmp_common import IBaseAirPresSensor, OversamplingCoeff, MeasChannels, MeasuredParams, SensorID
+from sensor_pack_2.bmp_common import (IBaseAirPresSensor, OversamplingCoeff, MeasChannels,
+                                      MeasuredParams, SensorID, SensorMode)
 from sensor_pack_2.base_sensor import Iterator, DeviceEx, check_value
 
 # ВНИМАНИЕ: не подключайте питание датчика к 5В, иначе датчик выйдет из строя! Только 3.3В!!!
@@ -33,6 +34,12 @@ _REG_ODR        = const(0x1D)
 _REG_CONFIG     = const(0x1F)
 _REG_CMD        = const(0x7E)
 _REG_CALIB_START = const(0x31)
+
+# для расчета времени преобразования
+_T_SETUP = const(234)
+_T_BASE_TEMP = const(163)
+_T_BASE_PRESS = const(392)
+_T_PHASE = const(2020)
 
 @micropython.native
 def _calibration_regs_addr() -> iter:
@@ -203,16 +210,18 @@ class Bmp390(IBaseAirPresSensor, Iterator):
             return err
         return error_flags_bmp390(fatal_err=0b001 & err, cmd_exec_failed=0b010 & err, conf_err=0b100 & err)
 
-    def get_data_status(self, raw: bool = True) -> data_status_bmp390:
+    def get_data_status(self, raw: bool = True) -> int | data_status_bmp390:
         """Возвращает три бита состояния датчика как кортеж
         Data ready for temperature, Data ready for pressure, CMD decoder status
-        бит 0 - CMD decoder status (0: Command in progress; 1: Command decoder is ready to accept a new command)
-        бит 1 - Data ready for pressure. (It gets reset, when one pressure DATA register is read out)
-        бит 2 - Data ready for temperature sensor. (It gets reset, when one temperature DATA register is read out)
+        бит 4 - CMD decoder status (Command decoder ready (1 = готов принять команду))
+        бит 5 - Data ready for pressure (сбрасывается при чтении регистра давления)
+        бит 6 - Data ready for temperature (сбрасывается при чтении регистра температуры)
         """
         val = self._connection.read_reg(_REG_STATUS, 1)[0]
+        if raw:
+            return val
         i = 0x07 & (val >> 4)
-        drdy_temp, drdy_press, cmd_rdy = 0x04 & i, 0x02 & i, 0x01 & i
+        drdy_temp, drdy_press, cmd_rdy = 0 != 0x04 & i, 0 != 0x02 & i, 0 != 0x01 & i
         return data_status_bmp390(temp_ready=drdy_temp, press_ready=drdy_press, cmd_decoder_ready=cmd_rdy)
 
     @micropython.native
@@ -333,17 +342,22 @@ class Bmp390(IBaseAirPresSensor, Iterator):
             reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
             raw_mode = (reg >> 4) & 0b11  # сырые биты: 0, 1 или 3
 
-            # аппаратное 3 -> внутреннее 2 (Normal)
-            if 3 == raw_mode:
-                self._mode = 2
+            # 0b00 → Sleep (0)
+            # 0b01 → Forced (1)
+            # 0b10 → Forced (1)  <- это тоже Forced!
+            # 0b11 → Normal (2)
+            if raw_mode == 0b11:
+                self._mode = SensorMode.NORMAL
+            elif raw_mode == 0b00:
+                self._mode = SensorMode.SLEEP
             else:
-                self._mode = raw_mode  # 0 и 1 совпадают
+                self._mode = SensorMode.FORCED  # Покрывает 0b01 и 0b10
             return self._mode
 
         if not value in range(3):
             raise ValueError(f"Invalid mode value: {value}")
         self._mode = value
-        return self._mode
+        return value
 
     def is_single_shot_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме однократных измерений,
@@ -424,20 +438,16 @@ class Bmp390(IBaseAirPresSensor, Iterator):
 
     @micropython.native
     def get_conversion_cycle_time(self) -> int:
-        """возвращает время преобразования в [мкс] датчиком температуры или давления в зависимости от его настроек.
-        ВНИМАНИЕ: BMP390 возвращает микросекунды, BMP180/BMP280 — миллисекунды!"""
-        k = 2020
-        total = 234  # базовое время
+        """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек."""
+        total = _T_SETUP
 
         if self._enable_temperature:
-            temp_us = 163 + k * (1 << self._oss_t)  # 2^n через сдвиг
-            total += temp_us
+            total += _T_BASE_TEMP + (_T_PHASE * (1 << self._oss_t))
 
         if self._enable_pressure:
-            press_us = 392 + k * (1 << self._oss_p) # 2^n через сдвиг
-            total += press_us
+            total += _T_BASE_PRESS + (_T_PHASE * (1 << self._oss_p))
 
-        return total
+        return 1 + (total // 1000)
 
     # Iterator
     def __next__(self) -> None | MeasuredParams:
@@ -449,3 +459,9 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         if self._enable_pressure and not self._enable_temperature:
             return MeasuredParams(temperature=None, pressure=self.get_pressure())
         return MeasuredParams(temperature=temperature, pressure=self.get_pressure())
+
+    def is_data_ready(self) -> bool:
+        mask = 0x60 # 0b01100000 -> биты 5 (drdy_pres) и 6 (drdy_temp)
+        raw_ds = self.get_data_status(raw=True)
+        print(f"DBG: raw_ds: 0x{raw_ds:x}")
+        return mask == (raw_ds & mask)
