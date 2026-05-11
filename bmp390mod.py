@@ -316,11 +316,11 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         if self._enable_temperature:
             tmp |= 0b10
 
-        if 0 == self._mode:
+        if SensorMode.SLEEP == self._mode:
             tmp &= ~0b0011_0000  # сброс битов для режима sleep mode
-        if 1 == self._mode:
+        if SensorMode.FORCED == self._mode:
             tmp |= 0b0001_0000  # forced mode (режим однократных измерений)
-        if 2 == self._mode:
+        if SensorMode.NORMAL == self._mode:
             tmp |= 0b0011_0000  # continuous mode (режим непрерывных периодических измерений)
         # записываю в датчик. АЦП запускается автоматически при выходе из sleep mode.
         self._connection.write_reg(reg_addr=_REG_PWR_CTRL, value=tmp, bytes_count=1)
