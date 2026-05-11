@@ -47,7 +47,7 @@ if __name__ == '__main__':
     ps.set_oversampling(temp=3, press=2)
     ps.set_sampling_period(5)
     ps.set_iir_filter(2)
-
+    delay_time = None
     print("Режим однократных измерений по запросу!")
     print(f"pwr mode: {ps.set_power_mode(None)}")
     ps.set_channels(temp_en=True, press_en=True)
@@ -55,7 +55,8 @@ if __name__ == '__main__':
     print(f"время преобразования в [мс]: {ps.get_conversion_cycle_time()}")
     for _ in range(ITERATIONS):
         ps.start_measurement()
-        delay_func(300)
+        delay_time = ps.get_conversion_cycle_time()
+        delay_func(delay_time)
         ds = ps.get_data_status(raw=False)
         temperature_ready, pressure_ready, cmd_ready = ds
         if cmd_ready and pressure_ready:
@@ -68,12 +69,13 @@ if __name__ == '__main__':
     print("Режим непрерывных периодических измерений!")
     ps.set_power_mode(value=SensorMode.NORMAL)
     ps.start_measurement()
+    delay_time = ps.get_conversion_cycle_time()
     print(f"pwr mode: {ps.set_power_mode(None)}")
     print(f"время преобразования в [мс]: {ps.get_conversion_cycle_time()}")
     for index, values in enumerate(ps):
         if index > ITERATIONS:
             break
-        delay_func(300)
+        delay_func(delay_time)
         if values is None:
             continue  # данные не готовы, пропускаем итерацию
         t, p = values.temperature, values.pressure
