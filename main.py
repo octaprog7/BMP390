@@ -59,11 +59,11 @@ if __name__ == '__main__':
         delay_func(delay_time)
         ds = ps.get_data_status(raw=False)
         temperature_ready, pressure_ready, cmd_ready = ds
-        if cmd_ready and pressure_ready:
+        if temperature_ready and pressure_ready:
             t, p = ps.get_temperature(), ps.get_pressure()
             print(f"Temperature: {t:.1f} \xB0C; pressure: {p:.1f} Pa ({pa_mmhg(p):.1f} mm Hg);")
         else:
-            print(f"Data ready: temp {temperature_ready}, press {pressure_ready}")
+            print(f"temperature_ready: {temperature_ready}. pressure_ready: {pressure_ready}")
     #
     _min_p, _max_p = 1E6, 0
     print("Режим непрерывных периодических измерений!")
@@ -77,6 +77,7 @@ if __name__ == '__main__':
             break
         delay_func(delay_time)
         if values is None:
+            print("Data NOT ready!")
             continue  # данные не готовы, пропускаем итерацию
         t, p = values.temperature, values.pressure
         tme = ps.get_sensor_time()
