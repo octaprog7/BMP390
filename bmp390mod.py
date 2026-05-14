@@ -53,6 +53,33 @@ def _calibration_regs_addr() -> iter:
         yield int(start_addr), int(v_size), v_type
         start_addr += int(v_size)
 
+def _mode_to_raw_mode(mode: int) -> int:
+    """Преобразует постоянные режима класса SensorMode в сырое значение,
+    которое соответствует значению датчика.
+    SensorMode  raw_mode    Описание
+    0 (SLEEP)       0       Sleep
+    1 (FORCED)      2       Forced
+    2 (NORMAL)      1       Normal
+    """
+    if SensorMode.FORCED == mode:
+        return 1
+    if SensorMode.NORMAL == mode:
+        return 3
+    return mode # 0 - SLEEP
+
+def _raw_mode_to_mode(raw_mode: int) -> int:
+    """Преобразует сырое значение режима работы датчика в постоянные режима класса SensorMode.
+        raw_mode    SensorMode      Описание
+        0           0 (SLEEP)       Sleep
+        1, 2        1 (FORCED)      Forced
+        3           2 (NORMAL)      Normal
+        """
+    if 1 == raw_mode or 2 == raw_mode:
+        return SensorMode.FORCED
+    if 3 == raw_mode:
+        return SensorMode.NORMAL
+    return SensorMode.SLEEP
+
 data_status_bmp390 = namedtuple("data_status_bmp390", "temp_ready press_ready cmd_decoder_ready")
 int_status_bmp390 = namedtuple("int_status_bmp390", "data_ready fifo_is_full fifo_watermark")
 event_bmp390 = namedtuple("event__bmp390", "itf_act_pt por_detected")
@@ -86,7 +113,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._adapter = adapter
         self._IIR = check_value(iir_filter, range(8),
                                  f"Invalid iir_filter value: {iir_filter}")
-        self._mode = 0  # sleep mode
+        self._mode = SensorMode.SLEEP  # sleep mode
         self._enable_pressure = False
         self._enable_temperature = False
         self._sampling_period = 0x02  # 1.28 sec
@@ -128,7 +155,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._sampling_period = reg_odr & 0b11111
 
         reg_pwr = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
-        self._mode = (reg_pwr >> 4) & 0b11
+        self._mode = _raw_mode_to_mode((reg_pwr >> 4) & 0b11)
         self._enable_pressure = bool(reg_pwr & 0b01)
         self._enable_temperature = bool(reg_pwr & 0b10)
 
@@ -316,12 +343,8 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         if self._enable_temperature:
             tmp |= 0b10
 
-        if SensorMode.SLEEP == self._mode:
-            tmp &= ~0b0011_0000  # сброс битов для режима sleep mode
-        if SensorMode.FORCED == self._mode:
-            tmp |= 0b0001_0000  # forced mode (режим однократных измерений)
-        if SensorMode.NORMAL == self._mode:
-            tmp |= 0b0011_0000  # continuous mode (режим непрерывных периодических измерений)
+        rm = _mode_to_raw_mode(self._mode)
+        tmp |= rm  # режим
         # записываю в датчик. АЦП запускается автоматически при выходе из sleep mode.
         self._connection.write_reg(reg_addr=_REG_PWR_CTRL, value=tmp, bytes_count=1)
 
@@ -341,17 +364,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         if value is None:
             reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
             raw_mode = (reg >> 4) & 0b11  # сырые биты: 0, 1 или 3
-
-            # 0b00 → Sleep (0)
-            # 0b01 → Forced (1)
-            # 0b10 → Forced (1)  <- это тоже Forced!
-            # 0b11 → Normal (2)
-            if raw_mode == 0b11:
-                self._mode = SensorMode.NORMAL
-            elif raw_mode == 0b00:
-                self._mode = SensorMode.SLEEP
-            else:
-                self._mode = SensorMode.FORCED  # Покрывает 0b01 и 0b10
+            self._mode = _raw_mode_to_mode(raw_mode)
             return self._mode
 
         if not value in range(3):
