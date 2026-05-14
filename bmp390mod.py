@@ -342,9 +342,9 @@ class Bmp390(IBaseAirPresSensor, Iterator):
             tmp |= 0b01
         if self._enable_temperature:
             tmp |= 0b10
-
+        #
         rm = _mode_to_raw_mode(self._mode)
-        tmp |= rm  # режим
+        tmp |= rm << 4  # режим
         # записываю в датчик. АЦП запускается автоматически при выходе из sleep mode.
         self._connection.write_reg(reg_addr=_REG_PWR_CTRL, value=tmp, bytes_count=1)
 
@@ -362,9 +362,9 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         Raises:
             ValueError: Если value не в диапазоне 0..2."""
         if value is None:
-            reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
-            raw_mode = (reg >> 4) & 0b11  # сырые биты: 0, 1 или 3
-            self._mode = _raw_mode_to_mode(raw_mode)
+            # reg = self._connection.read_reg(_REG_PWR_CTRL, 1)[0]
+            # raw_mode = (reg >> 4) & 0b11  # сырые биты: 0, 1 или 3
+            # self._mode = _raw_mode_to_mode(raw_mode)
             return self._mode
 
         if not value in range(3):
@@ -375,12 +375,12 @@ class Bmp390(IBaseAirPresSensor, Iterator):
     def is_single_shot_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме однократных измерений,
         каждое из которых запускается методом start_measurement"""
-        return 1 == self.set_power_mode(None)
+        return SensorMode.FORCED == self.set_power_mode(None)
 
     def is_continuously_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме многократных измерений,
         производимых автоматически. Процесс запускается методом start_measurement"""
-        return 2 == self.set_power_mode(None)
+        return SensorMode.NORMAL == self.set_power_mode(None)
 
     def set_oversampling(self, temp: int | None = None, press: int | None = None) -> OversamplingCoeff:
         """Устанавливает oversampling. Записывает в регистр OSR (0x1C) только если заданы параметры.
