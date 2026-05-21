@@ -53,13 +53,16 @@ def _calibration_regs_addr() -> iter:
         yield int(start_addr), int(v_size), v_type
         start_addr += int(v_size)
 
-def _mode_to_raw_mode(mode: int) -> int:
+def _mode_to_raw_mode(mode : int) -> int:
     """Преобразует постоянные режима класса SensorMode в сырое значение,
     которое соответствует значению датчика.
     SensorMode  raw_mode    Описание
     0 (SLEEP)       0       Sleep
     1 (FORCED)      2       Forced
     2 (NORMAL)      1       Normal
+
+    :param mode: Режим работы (используйте константы класса SensorMode)
+    :rtype: int
     """
     if SensorMode.FORCED == mode:
         return 1
@@ -73,6 +76,8 @@ def _raw_mode_to_mode(raw_mode: int) -> int:
         0           0 (SLEEP)       Sleep
         1, 2        1 (FORCED)      Forced
         3           2 (NORMAL)      Normal
+        :param raw_mode: int Режим работы датчика (сырой)
+        :rtype: :rtype: int. постоянные класса SensorMode
         """
     if 1 == raw_mode or 2 == raw_mode:
         return SensorMode.FORCED
@@ -104,7 +109,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._connection = DeviceEx(adapter=adapter, address=address, big_byte_order=False)
         self._buf_2 = bytearray(2)  # для _read_buf_from_mem
         self._buf_3 = bytearray(3)  # для _read_buf_from_mem
-        self._t_lin = None  # for pressure calculation
+        self._t_lin = 0  # for pressure calculation
         # for temperature only!
         self._oss_t = check_value(oversample_temp, range(6),
                                    f"Invalid temperature oversample value: {oversample_temp}")
