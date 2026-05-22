@@ -60,7 +60,8 @@ if __name__ == '__main__':
         ds = ps.get_data_status(raw=False)
         temperature_ready, pressure_ready, cmd_ready = ds
         if temperature_ready and pressure_ready:
-            t, p = ps.get_temperature(), ps.get_pressure()
+            t = ps.get_temperature()
+            p = ps.get_pressure()
             print(f"Temperature: {t:.1f} \xB0C; pressure: {p:.1f} Pa ({pa_mmhg(p):.1f} mm Hg);")
         else:
             print(f"temperature_ready: {temperature_ready}. pressure_ready: {pressure_ready}")
@@ -68,7 +69,7 @@ if __name__ == '__main__':
     _min_p, _max_p = 1E6, 0
     print("Режим непрерывных периодических измерений!")
     ps.set_power_mode(value=SensorMode.NORMAL)
-    ps.start_measurement()
+    # ps.start_measurement()
     delay_time = ps.get_conversion_cycle_time()
     print(f"pwr mode: {ps.set_power_mode(None)}")
     print(f"время преобразования в [мс]: {ps.get_conversion_cycle_time()}")
