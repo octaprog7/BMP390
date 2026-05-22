@@ -109,7 +109,23 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._connection = DeviceEx(adapter=adapter, address=address, big_byte_order=False)
         self._buf_2 = bytearray(2)  # для _read_buf_from_mem
         self._buf_3 = bytearray(3)  # для _read_buf_from_mem
-        self._t_lin = 0  # for pressure calculation
+        self._t_lin = 0.0  # for pressure calculation
+        # Температура (масштабированные коэффициенты, Appendix 8.4)
+        self.par_t1 = None
+        self.par_t2 = None
+        self.par_t3 = None
+        # Давление (масштабированные коэффициенты, Appendix 8.4)
+        self.par_p1 = None
+        self.par_p2 = None
+        self.par_p3 = None
+        self.par_p4 = None
+        self.par_p5 = None
+        self.par_p6 = None
+        self.par_p7 = None
+        self.par_p8 = None
+        self.par_p9 = None
+        self.par_p10 = None
+        self.par_p11 = None
         # for temperature only!
         self._oss_t = check_value(oversample_temp, range(6),
                                    f"Invalid temperature oversample value: {oversample_temp}")
@@ -123,7 +139,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._enable_temperature = False
         self._sampling_period = 0x02  # 1.28 sec
         # массив, хранящий калибровочные коэффициенты (14 штук)
-        self._cfa = array.array("l", [0 for _ in range(14)])  # signed long elements
+        self._cfa = array.array("l", (0,) * 14)  # signed long elements
         # считываю калибровочные коэффициенты
         self._read_calibration_data()
         # предварительный расчет
@@ -138,6 +154,31 @@ class Bmp390(IBaseAirPresSensor, Iterator):
     def _check_cc(index: int):
         """Проверяет на верность индекс калибровочного коэффициента."""
         check_value(index, range(14), f"Invalid index value: {index}")
+
+    @micropython.native
+    def _compensate_temp(self, adc_t: int) -> float:
+        """Компенсация температуры BMP390. Возвращает t_lin и сохраняет его."""
+        diff = float(adc_t) - self._c_t1
+        t_lin = diff * self._c_t2 + (diff * diff) * self._c_t3
+        self._t_lin = t_lin  # Обязательно для расчёта давления
+        return t_lin
+
+    @micropython.native
+    def _compensate_press(self, adc_p: int) -> float:
+        """Компенсация давления BMP390. Использует t_lin."""
+        loc_t = self._t_lin
+        loc_p = float(adc_p)
+
+        poly1 = self._c_p5 + loc_t * (self._c_p6 + loc_t * (self._c_p7 + loc_t * self._c_p8))
+        poly2 = self._c_p1 + loc_t * (self._c_p2 + loc_t * (self._c_p3 + loc_t * self._c_p4))
+        poly3 = self._c_p9 + loc_t * self._c_p10
+
+        # степени давления (вычисляются 1 раз)
+        p2 = loc_p * loc_p
+        p3 = p2 * loc_p
+
+        # формула без промежуточных переменных
+        return poly1 + loc_p * poly2 + p2 * poly3 + p3 * self._c_p11
 
     def get_calibration(self, index: int = None) -> int:
         """возвращает калибровочный коэффициент по его индексу (0..13).
@@ -167,23 +208,25 @@ class Bmp390(IBaseAirPresSensor, Iterator):
     @micropython.native
     def _precalculate(self):
         """предварительно вычисленные значения"""
-        get_cc = self.get_calibration
-        # для расчета температуры
-        self.par_t1 = get_cc(0) * 2 ** 8  #
-        self.par_t2 = get_cc(1) / 2 ** 30  #
-        self.par_t3 = get_cc(2) / 2 ** 48  #
-        # для расчета давления
-        self.par_p1 = (get_cc(3) - 2 ** 14) / 2 ** 20
-        self.par_p2 = (get_cc(4) - 2 ** 14) / 2 ** 29
-        self.par_p3 = get_cc(5) / 2 ** 32
-        self.par_p4 = get_cc(6) / 2 ** 37
-        self.par_p5 = get_cc(7) * 8
-        self.par_p6 = get_cc(8) / 2 ** 6
-        self.par_p7 = get_cc(9) / 2 ** 8
-        self.par_p8 = get_cc(10) / 2 ** 15
-        self.par_p9 = get_cc(11) / 2 ** 48
-        self.par_p10 = get_cc(12) / 2 ** 48
-        self.par_p11 = get_cc(13) / 2 ** 65
+        d = self._cfa  # ссылка для скорости
+
+        # === ТЕМПЕРАТУРА ===
+        self._c_t1 = d[0] * 256.0  # * 2^8
+        self._c_t2 = d[1] / 1073741824.0  # / 2^30
+        self._c_t3 = d[2] / 281474976710656.0  # / 2^48
+
+        # === ДАВЛЕНИЕ ===
+        self._c_p1 = (d[3] - 16384.0) / 1048576.0  #    (P1 - 2^14) / 2^20
+        self._c_p2 = (d[4] - 16384.0) / 536870912.0 #   (P2 - 2^14) / 2^29
+        self._c_p3 = d[5] / 4294967296.0  # / 2^32
+        self._c_p4 = d[6] / 137438953472.0  #   / 2^37
+        self._c_p5 = d[7] * 8.0  # * 2^3
+        self._c_p6 = d[8] / 64.0  # / 2^6
+        self._c_p7 = d[9] / 256.0  # / 2^8
+        self._c_p8 = d[10] / 32768.0  # / 2^15
+        self._c_p9 = d[11] / 281474976710656.0  # / 2^48
+        self._c_p10 = d[12] / 281474976710656.0  # / 2^48
+        self._c_p11 = d[13] / 3.6893488147419103E19  # / 2^65
 
     @staticmethod
     @micropython.native
@@ -256,54 +299,44 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         drdy_temp, drdy_press, cmd_rdy = 0 != 0x04 & i, 0 != 0x02 & i, 0 != 0x01 & i
         return data_status_bmp390(temp_ready=drdy_temp, press_ready=drdy_press, cmd_decoder_ready=cmd_rdy)
 
-    @micropython.native
-    def _get_pressure_raw(self) -> int:
+    def _get_raw_value(self, value: int = 0) -> int:
+        """Возвращает сырое 24-битное значение ADC.
+        value == 0 -> температура (_REG_TEMP_DATA)
+        value != 0 -> давление (_REG_PRESS_DATA)"""
         # трех байтовое значение
         buf = self._buf_3
-        l, m, h = self._connection.read_buf_from_mem(address=_REG_PRESS_DATA, buf=buf, address_size=1)
+        addr = _REG_TEMP_DATA if 0 == value else _REG_PRESS_DATA
+        l, m, h = self._connection.read_buf_from_mem(address=addr, buf=buf, address_size=1)
         return (h << 16) | (m << 8) | l
+
+    @micropython.native
+    def get_temperature(self) -> float:
+        """Return temperature in Celsius"""
+        uncompensated = self._get_raw_value(0)  # 0 - температура
+        diff = uncompensated - self.par_t1
+        # t_lin сохраняется для расчёта давления
+        self._t_lin = diff * self.par_t2 + (diff * diff) * self.par_t3
+        return self._t_lin
 
     def get_pressure(self) -> float:
         """Return pressure in Pascal [Pa].
         Call get_temperature() before call get_pressure() !!!"""
-        uncompensated = self._get_pressure_raw()
-        #
-        t_lin = self._t_lin
-        t_lin2 = t_lin * t_lin
-        t_lin3 = t_lin * t_lin * t_lin
-        #
-        partial_data1 = self.par_p6 * t_lin
-        partial_data2 = self.par_p7 * t_lin2
-        partial_data3 = self.par_p8 * t_lin3
-        partial_out1 = self.par_p5 + partial_data1 + partial_data2 + partial_data3
-        #
-        partial_data1 = self.par_p2 * t_lin
-        partial_data2 = self.par_p3 * t_lin2
-        partial_data3 = self.par_p4 * t_lin3
-        partial_out2 = uncompensated * (self.par_p1 + partial_data1 + partial_data2 + partial_data3)
-        #
-        partial_data1 = uncompensated * uncompensated
-        partial_data2 = self.par_p9 + self.par_p10 * t_lin
-        partial_data3 = partial_data1 * partial_data2
-        partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * self.par_p11
-        #
-        return partial_out1 + partial_out2 + partial_data4
+        uncompensated = self._get_raw_value(1)  # 1 - давление
+        t = self._t_lin
 
-    @micropython.native
-    def _get_temperature_raw(self) -> int:
-        # трех байтовое значение
-        buf = self._buf_3
-        l, m, h = self._connection.read_buf_from_mem(address=_REG_TEMP_DATA, buf=buf, address_size=1)
-        return (h << 16) | (m << 8) | l
+        # 🔹 Локальный кэш: убирает 12 lookup-ов self.par_pX в VM
+        p1, p2, p3, p4 = self.par_p1, self.par_p2, self.par_p3, self.par_p4
+        p5, p6, p7, p8 = self.par_p5, self.par_p6, self.par_p7, self.par_p8
+        p9, p10, p11 = self.par_p9, self.par_p10, self.par_p11
 
-    def get_temperature(self) -> float:
-        """Return temperature in Celsius"""
-        uncompensated = self._get_temperature_raw()
-        partial_data1 = uncompensated - self.par_t1
-        partial_data2 = partial_data1 * self.par_t2
-        # Update the compensated temperature since this is needed for pressure calculation !!!
-        self._t_lin = partial_data2 + (partial_data1 * partial_data1) * self.par_t3
-        return self._t_lin
+        # степени вычисляются 1 раз
+        u2 = uncompensated * uncompensated
+
+        out1 = p5 + t * (p6 + t * (p7 + t * p8))
+        out2 = uncompensated * (p1 + t * (p2 + t * (p3 + t * p4)))
+        out3 = u2 * (p9 + t * p10) + (u2 * uncompensated) * p11
+
+        return out1 + out2 + out3
 
     @micropython.native
     def get_sensor_time(self) -> int:
