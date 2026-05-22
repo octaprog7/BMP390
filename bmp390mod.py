@@ -144,6 +144,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._read_calibration_data()
         # предварительный расчет
         self._precalculate()
+        self.refresh_config()
 
     def __del__(self):
         del self._cfa
@@ -206,27 +207,28 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         self._enable_temperature = bool(reg_pwr & 0b10)
 
     @micropython.native
+    @micropython.native
     def _precalculate(self):
-        """предварительно вычисленные значения"""
+        """предварительно вычисленные значения (BMP390, Appendix 8.4)"""
         d = self._cfa  # ссылка для скорости
 
-        # === ТЕМПЕРАТУРА ===
-        self._c_t1 = d[0] * 256.0  # * 2^8
-        self._c_t2 = d[1] / 1073741824.0  # / 2^30
-        self._c_t3 = d[2] / 281474976710656.0  # / 2^48
+        # температура
+        self.par_t1 = d[0] * 256.0                     # * 2^8
+        self.par_t2 = d[1] / 1073741824.0              # / 2^30
+        self.par_t3 = d[2] / 281474976710656.0         # / 2^48
 
-        # === ДАВЛЕНИЕ ===
-        self._c_p1 = (d[3] - 16384.0) / 1048576.0  #    (P1 - 2^14) / 2^20
-        self._c_p2 = (d[4] - 16384.0) / 536870912.0 #   (P2 - 2^14) / 2^29
-        self._c_p3 = d[5] / 4294967296.0  # / 2^32
-        self._c_p4 = d[6] / 137438953472.0  #   / 2^37
-        self._c_p5 = d[7] * 8.0  # * 2^3
-        self._c_p6 = d[8] / 64.0  # / 2^6
-        self._c_p7 = d[9] / 256.0  # / 2^8
-        self._c_p8 = d[10] / 32768.0  # / 2^15
-        self._c_p9 = d[11] / 281474976710656.0  # / 2^48
-        self._c_p10 = d[12] / 281474976710656.0  # / 2^48
-        self._c_p11 = d[13] / 3.6893488147419103E19  # / 2^65
+        # давление
+        self.par_p1 = (d[3] - 16384.0) / 1048576.0     # (P1 - 2^14) / 2^20
+        self.par_p2 = (d[4] - 16384.0) / 536870912.0   # (P2 - 2^14) / 2^29
+        self.par_p3 = d[5] / 4294967296.0              # / 2^32
+        self.par_p4 = d[6] / 137438953472.0            # / 2^37
+        self.par_p5 = d[7] * 8.0                       # * 2^3
+        self.par_p6 = d[8] / 64.0                      # / 2^6
+        self.par_p7 = d[9] / 256.0                     # / 2^8
+        self.par_p8 = d[10] / 32768.0                  # / 2^15
+        self.par_p9 = d[11] / 281474976710656.0        # / 2^48
+        self.par_p10 = d[12] / 281474976710656.0       # / 2^48
+        self.par_p11 = d[13] / 3.6893488147419103E19   # / 2^65
 
     @staticmethod
     @micropython.native
@@ -313,6 +315,7 @@ class Bmp390(IBaseAirPresSensor, Iterator):
     def get_temperature(self) -> float:
         """Return temperature in Celsius"""
         uncompensated = self._get_raw_value(0)  # 0 - температура
+        # print(f"DBG: uncompensated: {uncompensated}\tpar_t1: {self.par_t1}")
         diff = uncompensated - self.par_t1
         # t_lin сохраняется для расчёта давления
         self._t_lin = diff * self.par_t2 + (diff * diff) * self.par_t3
@@ -489,7 +492,11 @@ class Bmp390(IBaseAirPresSensor, Iterator):
 
     @micropython.native
     def get_conversion_cycle_time(self) -> int:
-        """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек."""
+        """возвращает время преобразования в [мс] датчиком температуры или давления в зависимости от его настроек.
+        For Normal mode: t_meas + t_standby (полный период между обновлениями данных)
+        For Forced/Sleep: только t_meas (время однократного преобразования)
+
+        Формула standby для BMP390: τ = (2^odr_sel) / 200 Hz = (2^odr_sel) * 5 мс"""
         total = _T_SETUP
 
         if self._enable_temperature:
@@ -498,7 +505,12 @@ class Bmp390(IBaseAirPresSensor, Iterator):
         if self._enable_pressure:
             total += _T_BASE_PRESS + (_T_PHASE * (1 << self._oss_p))
 
-        return 1 + (total // 1000)
+        if SensorMode.NORMAL == self._mode:
+            prescaler = 1 << self._sampling_period
+            standby_ms = 5 * prescaler
+            total += 1000 * standby_ms  # мс -> мкс
+
+        return 1 + (total // 1000)  # мкс -> мс
 
     # Iterator
     def __next__(self) -> None | MeasuredParams:
@@ -514,5 +526,5 @@ class Bmp390(IBaseAirPresSensor, Iterator):
     def is_data_ready(self) -> bool:
         mask = 0x60 # 0b01100000 -> биты 5 (drdy_pres) и 6 (drdy_temp)
         raw_ds = self.get_data_status(raw=True)
-        print(f"DBG: raw_ds: 0x{raw_ds:x}")
+        # print(f"DBG: raw_ds: 0x{raw_ds:x}")
         return mask == (raw_ds & mask)
